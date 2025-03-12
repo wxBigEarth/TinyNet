@@ -19,6 +19,19 @@ using namespace tinynet;
 #define PORT 8000
 #define MULTICAST "239.0.0.1"
 
+// 组播接收端
+void MulticastReceiver()
+{
+	CMulticast mc;
+
+	mc.Init(MULTICAST, PORT);
+	mc.Receiver();
+
+	mc.fnRecvCallback = [&](const std::string& msg) {
+		std::cout << msg << endl;
+	}
+}
+
 int main()
 {
 	CTinyClient rc;
@@ -50,7 +63,9 @@ int main()
 		cout << "Recv [" << sData.length() << "]: " << sData.c_str() << endl;
 	};
 	//rc.SetRecvBuffSize(8192);
-	if (rc.Start(TYPE, HOST, PORT))
+
+	rc.Init(TYPE, HOST, PORT);
+	if (rc.Start())
 	{
 		char szOutMsg[1024] = { 0 };
 		rc.EnableHeart(3000);

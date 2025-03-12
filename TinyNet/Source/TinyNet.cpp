@@ -23,6 +23,13 @@ namespace tinynet
 {
 	constexpr unsigned int kHeartId = (('N' << 16) | ('I' << 8) | ('X'));
 
+	const std::string kNetTypeString[] = 
+	{
+		"TCP",
+		"UDP",
+		"MULTICAST",
+	};
+
 	inline const unsigned int GetCpuNum()
 	{
 		return std::thread::hardware_concurrency();
@@ -97,7 +104,7 @@ namespace tinynet
 		return sResult;
 	}
 
-	inline int LastError()
+	int LastError()
 	{
 #if defined(_WIN32) || defined(_WIN64)
 		return WSAGetLastError();
@@ -121,45 +128,54 @@ namespace tinynet
 
 	static stSockaddrIn* toSockaddrIn(char* n_szAddr) { return (stSockaddrIn*)n_szAddr; }
 
-	////////////////////////////////////////////////////////////////////////////////
-	void FNetNode::Init(const ENetType n_eType,
-		const std::string& n_sHost, const int n_nPort)
+	static void BuildSockAddrIn(void* n_Addr, const std::string& n_sHost, const unsigned short n_nPort)
 	{
-		eNetType = n_eType;
-		nPort = n_nPort;
-
-		memcpy(sHost, n_sHost.c_str(), n_sHost.size());
+		stSockaddrIn* pSockaddrIn = (stSockaddrIn*)n_Addr;
 
 		toSockaddrIn(Addr)->sin_family = AF_INET;
 		toSockaddrIn(Addr)->sin_port = htons(nPort);
 		inet_pton(AF_INET, sHost, &toSockaddrIn(Addr)->sin_addr.s_addr);
 	}
 
-	void FNetNode::Init(const ENetType n_eType, const stSockaddrIn* n_Addr)
+	////////////////////////////////////////////////////////////////////////////////
+	void FNetNode::Init(const ENetType n_eType,
+		const std::string& n_sHost, const int n_nPort)
 	{
 		eNetType = n_eType;
-		if (!n_Addr) return;
-		memcpy(Addr, n_Addr, sizeof(stSockaddrIn));
 
-		ParseAddr();
+		BuildSockAddrIn(&Addr, n_sHost, n_nPort);
 	}
 
-	void FNetNode::ParseAddr()
+	void FNetNode::Init(const ENetType n_eType, const stSockaddrIn* n_Addr)
 	{
-		nPort = ntohs(toSockaddrIn(Addr)->sin_port);
+		if (!n_Addr) return;
 
-		memset(sHost, 0, IPADDR_SIZE);
+		eNetType = n_eType;
+		memcpy(Addr, n_Addr, sizeof(stSockaddrIn));
+	}
+
+	const unsigned short Port()
+	{
+		return ntohs(toSockaddrIn(Addr)->sin_port);
+	}
+
+	const std::string Ip()
+	{
+		char sHost[IPADDR_SIZE] = { 0 };
+
 		inet_ntop(AF_INET,
 			&toSockaddrIn(Addr)->sin_addr.s_addr,
 			sHost,
 			IPADDR_SIZE);
+
+		return std::string(sHost);
 	}
 
 	int FNetNode::Send(const char* n_szData, const int n_nSize) const
 	{
 		int nResult = 0;
 
-		if (fd <= 0) return nResult;
+		if (!IsValid()) return nResult;
 
 		if (eNetType == ENetType::TCP)
 		{
@@ -168,7 +184,7 @@ namespace tinynet
 		else if (eNetType == ENetType::UDP)
 		{
 			nResult = sendto(fd, n_szData, n_nSize, 0, 
-				(stSockaddr*)Addr, sizeof(stSockaddrIn));
+				(stSockaddr*)Addr, sizeof(stSockaddr));
 		}
 
 		return nResult;
@@ -182,15 +198,13 @@ namespace tinynet
 	int FNetNode::Send(const char* n_szData, const int n_nSize,
 		const std::string& n_sHost, const int n_nPort) const
 	{
-		if (fd <= 0 || eNetType == ENetType::TCP) return 0;
+		if (!IsValid() || eNetType == ENetType::TCP) return 0;
 
-		stSockaddrIn OtherAddr{};
-		OtherAddr.sin_family = AF_INET;
-		OtherAddr.sin_port = htons(n_nPort);
-		inet_pton(AF_INET, n_sHost.c_str(), &OtherAddr.sin_addr.s_addr);
+		stSockaddrIn OtherAddr = { 0 };
+		BuildSockAddrIn(&OtherAddr, n_sHost, n_nPort);
 
 		return sendto(fd, n_szData, n_nSize, 0,
-			(stSockaddr*)&OtherAddr, sizeof(stSockaddrIn));
+			(stSockaddr*)&OtherAddr, sizeof(stSockaddr));
 	}
 
 	int FNetNode::Send(const std::string& n_sData, 
@@ -199,12 +213,83 @@ namespace tinynet
 		return Send(n_sData.c_str(), n_sData.size(), n_sHost, n_nPort);
 	}
 
+	const bool FNetNode::IsValid() const
+	{
+		return fd > 0;
+	}
+
+	const std::string FNetNode::ToString()
+	{
+		char szBuff[64] = { 0 };
+
+#if defined(_WIN32) || defined(_WIN64)
+		int nLen = sprintf_s(szBuff, sizeof(szBuff), "%s %s:%d ",
+			kNetTypeString[(int)eNetType].data(),
+			Ip().data(),
+			Port()
+		);
+#else
+		int nLen = sprintf(szBuff, "%s %s:%d ",
+			kNetTypeString[(int)eNetType].data(),
+			Ip().data(),
+			Port()
+		);
+#endif
+
+		return std::string(szBuff, nLen);
+	}
+
+	bool FNetNode::operator==(const FNetNode& n_NetNode)
+	{
+		return memcmp(Addr, n_NetNode.Addr, 0) == 0;
+	}
+
 	void FNetNode::Clear()
 	{
-		nPort = 0;
 		fd = 0;
 		memset(Addr, 0, sizeof(stSockaddrIn));
-		memset(sHost, 0, IPADDR_SIZE);
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
+#if defined(_WIN32) || defined(_WIN64)
+	int INetImpl::m_nRef = 0;
+#endif
+
+	INetImpl::INetImpl()
+	{
+		Startup();
+	}
+
+	INetImpl::~INetImpl()
+	{
+		Cleanup();
+	}
+
+	void INetImpl::Startup()
+	{
+#if defined(_WIN32) || defined(_WIN64)
+		if (m_nRef == 0)
+		{
+			WSADATA wsaData;
+			int nResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+			if (nResult != 0) DebugError("初始化 Socket 失败\n");
+		}
+
+		m_nRef++;
+#endif
+	}
+
+	void INetImpl::Cleanup()
+	{
+#if defined(_WIN32) || defined(_WIN64)
+		m_nRef--;
+
+		if (m_nRef <= 0)
+		{
+			WSACleanup();
+			m_nRef = 0;
+		}
+#endif
 	}
 
 	////////////////////////////////////////////////////////////////////////////////
@@ -217,49 +302,46 @@ namespace tinynet
 		Release();
 	}
 
-	int CMulticast::Sender(const std::string& n_sHost, const int n_nPort)
+	bool CMulticast::Init(const std::string& n_sHost, const unsigned short n_nPort);
 	{
-		if (m_NetNode.fd > 0) return -1;
+		if (m_NetNode.IsValid()) return true;
 
-		int nResult = 0;
 		m_NetNode.fd = socket(AF_INET, SOCK_DGRAM, 0);
 		if (m_NetNode.fd == SOCKET_ERROR)
 		{
 			DebugError("create Socket error: %d\n", LastError());
-			nResult = -1;
 		}
-		m_NetNode.Init(ENetType::UDP, n_sHost, n_nPort);
+		else
+		{
+			BuildSockAddrIn(&m_NetNode.Addr, n_sHost, n_nPort);
+		}
 
-		return nResult;
+		return m_NetNode.IsValid();
 	}
 
-	int CMulticast::Receiver(const std::string& n_sHost, const int n_nPort,
-		const std::string& n_sLocalIP)
+	int CMulticast::Sender()
 	{
-		if (m_NetNode.fd > 0) return -1;
+		if (!m_NetNode.IsValid()) return -1;
+		m_NetNode.eNetType = ENetType::UDP;
+		return 0;
+	}
 
-		int nResult = 0;
+	int CMulticast::Receiver(const std::string& n_sLocalIP)
+	{
+		int nResult = -1;
+		if (!m_NetNode.IsValid()) return nResult;
 
 		do
 		{
-			m_NetNode.fd = socket(AF_INET, SOCK_DGRAM, 0);
-			if (m_NetNode.fd == SOCKET_ERROR)
-			{
-				DebugError("create Socket error: %d\n", LastError());
-				break;
-			}
-			m_NetNode.Init(ENetType::UDP_MULTICAST, n_sHost, n_nPort);
-
-			stSockaddrIn Addr{};
-			Addr.sin_family = AF_INET;
-			Addr.sin_port = htons(m_NetNode.nPort);
+			m_NetNode.eNetType = ENetType::UDP_MULTICAST;
 
 			m_sLocalIp = n_sLocalIP;
 			if (m_sLocalIp.empty()) m_sLocalIp = GetLocalIPAddress();
-			inet_pton(AF_INET, m_sLocalIp.c_str(), &Addr.sin_addr.s_addr);
 
-			nResult = bind(m_NetNode.fd,
-				(stSockaddr*)&Addr, sizeof(stSockaddrIn));
+			stSockaddrIn Addr = { 0 };
+			BuildSockAddrIn(&Addr, m_sLocalIp, n_nPort);
+
+			nResult = bind(m_NetNode.fd, (stSockaddr*)&Addr, sizeof(stSockaddr));
 			if (nResult == -1)
 			{
 				DebugError("multicast bind Socket error: %d\n", LastError());
@@ -294,7 +376,7 @@ namespace tinynet
 
 	int CMulticast::Release()
 	{
-		if (m_NetNode.fd <= 0) return -1;
+		if (!m_NetNode.IsValid()) return -1;
 
 		if (m_NetNode.eNetType == ENetType::UDP_MULTICAST)
 		{
@@ -327,6 +409,12 @@ namespace tinynet
 		return m_NetNode.Send(n_szData, n_nSize);
 	}
 
+	int CMulticast::Send(const std::string n_sData)
+	{
+		if (m_NetNode.eNetType != ENetType::UDP) return 0;
+		return m_NetNode.Send(n_sData);
+	}
+
 	void CMulticast::SetRecvBuffSize(const int n_nSize)
 	{
 		m_nBuffSize = n_nSize;
@@ -357,25 +445,17 @@ namespace tinynet
 
 	////////////////////////////////////////////////////////////////////////////////
 #pragma region base
-#if defined(_WIN32) || defined(_WIN64)
-	int ITinyNet::m_nRef = 0;
-#endif
 
 	ITinyNet::ITinyNet()
 	{
-		Startup();
 	}
 
 	ITinyNet::~ITinyNet()
 	{
-		Cleanup();
 	}
 
-	bool ITinyNet::Start(const ENetType n_eType, 
-		const std::string& n_sHost, const int n_nPort)
+	bool ITinyNet::Start()
 	{
-		m_NetNode.Init(n_eType, n_sHost, n_nPort);
-
 		return true;
 	}
 
@@ -384,41 +464,14 @@ namespace tinynet
 		//if (fnEventCallback) fnEventCallback(ENetEvent::Quit, "");
 	}
 
-	int ITinyNet::Send(const char* n_szData, const int n_nSize)
-	{
-		return m_NetNode.Send(n_szData, n_nSize);
-	}
-
-	int ITinyNet::Send(const std::string& n_sData)
-	{
-		return m_NetNode.Send(n_sData);
-	}
-
-	int ITinyNet::Send(const char* n_szData, const int n_nSize,
-		const std::string& n_sHost, const int n_nPort)
-	{
-		return m_NetNode.Send(n_szData, n_nSize, n_sHost, n_nPort);
-	}
-
-	int ITinyNet::Send(const std::string& n_sData, 
-		const std::string& n_sHost, const int n_nPort)
-	{
-		return m_NetNode.Send(n_sData, n_sHost, n_nPort);
-	}
-
 	void ITinyNet::EnableHeart(int n_nPeriod)
 	{
-	}
-
-	const bool ITinyNet::IsValid() const
-	{
-		return m_NetNode.fd > 0;
 	}
 
 	int ITinyNet::KeepAlive(int n_nAlive) const
 	{
 		if (!IsValid()) return 0;
-		if (m_NetNode.eNetType != ENetType::TCP) return 0;
+		if (eNetType != ENetType::TCP) return 0;
 
 		int keepAlive = 1;
 		//int keepIdle = 60; // 空闲时间
@@ -426,7 +479,7 @@ namespace tinynet
 		//int keepCount = 3; // 探测次数
 
 		int nResult = setsockopt(
-			m_NetNode.fd,
+			fd,
 			SOL_SOCKET,
 			SO_KEEPALIVE,
 			(ValType)&keepAlive,
@@ -460,7 +513,7 @@ namespace tinynet
 #endif
 			// 设置接收超时
 			nResult = setsockopt(
-				m_NetNode.fd,
+				fd,
 				SOL_SOCKET,
 				SO_RCVTIMEO,
 				(ValType)&tv,
@@ -474,7 +527,7 @@ namespace tinynet
 
 			// 设置发送超时
 			nResult = setsockopt(
-				m_NetNode.fd,
+				fd,
 				SOL_SOCKET,
 				SO_SNDTIMEO,
 				(ValType)&tv,
@@ -496,7 +549,7 @@ namespace tinynet
 		if (!IsValid()) return 0;
 
 		int nResult = setsockopt(
-			m_NetNode.fd,
+			fd,
 			SOL_SOCKET,
 			SO_REUSEADDR,
 			(ValType)&n_nReuse,
@@ -511,37 +564,6 @@ namespace tinynet
 	void ITinyNet::SetRecvBuffSize(const int n_nSize)
 	{
 		m_nBuffSize = n_nSize;
-	}
-
-	FNetNode& ITinyNet::ThisNode()
-	{
-		return m_NetNode;
-	}
-
-	void ITinyNet::Startup()
-	{
-#if defined(_WIN32) || defined(_WIN64)
-		if (m_nRef == 0)
-		{
-			WSADATA wsaData;
-			int nResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-			if (nResult != 0) DebugError("初始化 Socket 失败\n");
-		}
-
-		m_nRef++;
-#endif
-	}
-
-	void ITinyNet::Cleanup()
-	{
-#if defined(_WIN32) || defined(_WIN64)
-		m_nRef--;
-
-		if (m_nRef <= 0)
-		{
-			WSACleanup();
-		}
-#endif
 	}
 
 #pragma endregion
@@ -562,7 +584,6 @@ namespace tinynet
 
 	CTinyServer::CTinyServer()
 	{
-
 	}
 
 	CTinyServer::~CTinyServer()
@@ -570,12 +591,9 @@ namespace tinynet
 		Stop();
 	}
 
-	bool CTinyServer::Start(const ENetType n_eType, 
-		const std::string& n_sHost, const int n_nPort)
+	bool CTinyServer::Start()
 	{
-		if (m_NetNode.fd > 0) return false;
-
-		ITinyNet::Start(n_eType, n_sHost, n_nPort);
+		if (IsValid()) return false;
 
 		m_bRun = InitSock();
 		return m_bRun;
@@ -600,7 +618,7 @@ namespace tinynet
 
 		m_bRun = false;
 		// 关闭Socket
-		CloseSocket(m_NetNode.fd);
+		CloseSocket(fd);
 		// 释放所有为客户端分配的内存
 		FreeSocketNodes();
 		// 关闭完成端口
@@ -618,7 +636,7 @@ namespace tinynet
 		m_bRun = false;
 		FreeSocketNodes();
 
-		CloseSocket(m_NetNode.fd);
+		CloseSocket(fd);
 		close(m_nEpfd);
 		m_nEpfd = 0;
 
@@ -632,7 +650,7 @@ namespace tinynet
 		int nResult = 0;
 		bool bResult = false;
 
-		int nSockType = NetType2SockType(m_NetNode.eNetType);
+		int nSockType = NetType2SockType(eNetType);
 
 		do
 		{
@@ -643,8 +661,8 @@ namespace tinynet
 				break;
 			}
 
-			m_NetNode.fd = WSASocketW(AF_INET, nSockType, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-			if (m_NetNode.fd == SOCKET_ERROR)
+			fd = WSASocketW(AF_INET, nSockType, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+			if (fd == SOCKET_ERROR)
 			{
 				DebugError("创建 Socket 失败\n");
 				break;
@@ -654,43 +672,38 @@ namespace tinynet
 			SetTimeout(-1);
 			ReuseAddr(1);
 
-			stSockaddrIn Addr{};
-			Addr.sin_family = AF_INET;
-			Addr.sin_port = htons(m_NetNode.nPort);
-			inet_pton(AF_INET, m_NetNode.sHost, &Addr.sin_addr.s_addr);
-
-			nResult = bind(m_NetNode.fd, (stSockaddr*)&Addr, sizeof(stSockaddrIn));
+			nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
 				DebugError("绑定 Socket 失败\n");
 				break;
 			}
 
-			if (m_NetNode.eNetType == ENetType::TCP)
+			if (eNetType == ENetType::TCP)
 			{
-				nResult = listen(m_NetNode.fd, SOMAXCONN);
+				nResult = listen(fd, SOMAXCONN);
 				if (nResult == SOCKET_ERROR)
 				{
 					DebugError("监听 Socket 失败\n");
 					break;
 				}
 			}
-			else if (m_NetNode.eNetType == ENetType::UDP)
+			else if (eNetType == ENetType::UDP)
 			{
 				CreateIoCompletionPort(
-					(HANDLE)m_NetNode.fd, m_hIocp, (ULONG_PTR)m_NetNode.fd, 0
+					(HANDLE)fd, m_hIocp, (ULONG_PTR)fd, 0
 				);
 			}
 
 			if (!CreateWorkerThread()) break;
 
-			if (m_NetNode.eNetType == ENetType::TCP)
+			if (eNetType == ENetType::TCP)
 			{
 				std::thread(&CTinyServer::Accept, this).detach();
 			}
-			else if (m_NetNode.eNetType == ENetType::UDP)
+			else if (eNetType == ENetType::UDP)
 			{
-				auto UdpHandle = AllocSocketNode(m_NetNode.fd, nullptr);
+				auto UdpHandle = AllocSocketNode(fd, nullptr);
 				PostRecv(UdpHandle);
 			}
 
@@ -700,7 +713,7 @@ namespace tinynet
 
 		} while (false);
 
-		if (!bResult) CloseSocket(m_NetNode.fd);
+		if (!bResult) CloseSocket(fd);
 
 		return bResult;
 	}
@@ -716,7 +729,7 @@ namespace tinynet
 		while (true)
 		{
 			ClientSocket = WSAAccept(
-				m_NetNode.fd, (stSockaddr*)&ClientAddr, &AddrLen, NULL, NULL
+				fd, (stSockaddr*)&ClientAddr, &AddrLen, NULL, NULL
 			);
 
 			if (ClientSocket == SOCKET_ERROR)
@@ -729,9 +742,7 @@ namespace tinynet
 
 			if (fnEventCallback)
 			{
-				std::string str = TcpHandle->NetNode.sHost;
-				str += ":";
-				str += std::to_string(TcpHandle->NetNode.nPort);
+				std::string str = TcpHandle->NetNode.ToString();
 				fnEventCallback(ENetEvent::Accept, str);
 			}
 
@@ -807,9 +818,6 @@ namespace tinynet
 				}
 				else
 				{
-					if (m_NetNode.eNetType == ENetType::UDP)
-						pSocketInfo->NetNode.ParseAddr();
-
 					if (fnRecvCallback)
 					{
 						fnRecvCallback(
@@ -840,7 +848,7 @@ namespace tinynet
 		DWORD	nRecvBytes = 0;
 		auto	Handle = (FNetHandle*)(n_Handle);
 
-		if (m_NetNode.eNetType == ENetType::TCP)
+		if (eNetType == ENetType::TCP)
 		{
 			nResult = WSARecv(
 				Handle->NetNode.fd,
@@ -852,7 +860,7 @@ namespace tinynet
 				nullptr
 			);
 		}
-		else if (m_NetNode.eNetType == ENetType::UDP)
+		else if (eNetType == ENetType::UDP)
 		{
 			SockaddrLen nLen = sizeof(stSockaddrIn);
 			nResult = WSARecvFrom(
@@ -877,7 +885,7 @@ namespace tinynet
 		if (!Handle) return nullptr;
 
 		Handle->NetNode.fd = n_fd;
-		Handle->NetNode.Init(m_NetNode.eNetType, n_Addr);
+		Handle->NetNode.Init(eNetType, n_Addr);
 		memset(&(Handle->Overlapped), 0, sizeof(OVERLAPPED));
 
 		// 分配接收数据缓存
@@ -900,13 +908,10 @@ namespace tinynet
 
 		if (it != m_mNodes.end())
 		{
-			if (fnEventCallback &&
-				m_NetNode.eNetType == ENetType::TCP)
+			if (fnEventCallback && eNetType == ENetType::TCP)
 			{
 				// 抛出退出事件
-				std::string str = Handle->NetNode.sHost;
-				str += ":";
-				str += std::to_string(Handle->NetNode.nPort);
+				std::string str = Handle->NetNode.ToString();
 				fnEventCallback(ENetEvent::Quit, str);
 			}
 
@@ -938,12 +943,12 @@ namespace tinynet
 		int nResult = 0;
 		bool bResult = false;
 
-		int nSockType = NetType2SockType(m_NetNode.eNetType);
+		int nSockType = NetType2SockType(eNetType);
 
 		do
 		{
-			m_NetNode.fd = socket(AF_INET, nSockType, 0);
-			if (m_NetNode.fd == -1)
+			fd = socket(AF_INET, nSockType, 0);
+			if (fd == -1)
 			{
 				DebugError("create Socket error: %d\n", LastError());
 				break;
@@ -961,28 +966,23 @@ namespace tinynet
 			}
 
 			/** 添加Epoll事件. */
-			nResult = AddSocketIntoPoll(m_NetNode.fd);
+			nResult = AddSocketIntoPoll(fd);
 			if (nResult == -1)
 			{
 				DebugError("Add EPoll eventl error: %d\n", LastError());
 				break;
 			}
 
-			stSockaddrIn Addr = { 0 };
-			Addr.sin_family = AF_INET;
-			Addr.sin_port = htons(m_NetNode.nPort);
-			Addr.sin_addr.s_addr = inet_addr(m_NetNode.sHost);
-
-			nResult = bind(m_NetNode.fd, (stSockaddr*)&Addr, sizeof(stSockaddrIn));
+			nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == -1)
 			{
 				DebugError("bind Socket error: %d\n", LastError());
 				break;
 			}
 
-			if (m_NetNode.eNetType == ENetType::TCP)
+			if (eNetType == ENetType::TCP)
 			{
-				nResult = listen(m_NetNode.fd, SOMAXCONN);
+				nResult = listen(fd, SOMAXCONN);
 				if (nResult == -1)
 				{
 					DebugError("listen Socket error: %d\n", LastError());
@@ -998,7 +998,7 @@ namespace tinynet
 
 		} while (false);
 
-		if (!bResult) CloseSocket(m_NetNode.fd);
+		if (!bResult) CloseSocket(fd);
 
 		return bResult;
 	}
@@ -1010,12 +1010,12 @@ namespace tinynet
 		int					nResult = 0;
 		struct epoll_event	Event[EPOLL_SIZE];
 
-		stSockaddrIn		Addr = { 0 };
+		stSockaddrIn		RemoteAddr = { 0 };
 		SockaddrLen			nLen = sizeof(stSockaddrIn);
 
 		FNetNode			NetNode;
-		NetNode.fd = m_NetNode.fd;
-		NetNode.eNetType = m_NetNode.eNetType;
+		NetNode.fd = fd;
+		NetNode.eNetType = eNetType;
 
 		char* szBuff = (char*)malloc(m_nBuffSize);
 		if (!szBuff) return;
@@ -1023,7 +1023,7 @@ namespace tinynet
 
 		while (true)
 		{
-			//nCount表示就绪事件的数目
+			// nCount表示就绪事件的数目
 			int nCount = epoll_wait(m_nEpfd, Event, EPOLL_SIZE, -1);
 			if (nCount < 0)
 			{
@@ -1035,41 +1035,38 @@ namespace tinynet
 			{
 				if (!(Event[i].events & EPOLLIN)) continue;
 
-				//新用户连接
-				if (Event[i].data.fd == m_NetNode.fd
-					&& m_NetNode.eNetType == ENetType::TCP)
+				// 新用户连接
+				if (Event[i].data.fd == fd && eNetType == ENetType::TCP)
 				{
-					int nFd = accept(m_NetNode.fd, (stSockaddr*)&Addr, &nLen);
+					int nFd = accept(fd, (stSockaddr*)&RemoteAddr, &nLen);
 					if (nFd == -1)
 					{
 						DebugError("accept error: %d\n", LastError());
 						continue;
 					}
 
-					//把这个新的客户端添加到内核事件列表
+					// 把这个新的客户端添加到内核事件列表
 					AddSocketIntoPoll(nFd);
 
-					FNetNode NetNode;
-					NetNode.fd = nFd;
-					NetNode.Init(ENetType::TCP, &Addr);
-					m_mNodes.insert({ nFd, NetNode });
+					FNetNode RemoteNetNode;
+					RemoteNetNode.fd = nFd;
+					RemoteNetNode.Init(ENetType::TCP, &RemoteAddr);
+					m_mNodes.insert({ nFd, RemoteNetNode });
 
 					if (fnEventCallback)
 					{
-						std::string str = NetNode.sHost;
-						str += ":";
-						str += std::to_string(NetNode.nPort);
+						std::string str = RemoteNetNode.ToString();
 						fnEventCallback(ENetEvent::Accept, str);
 					}
 				}
 				else
 				{
-					//客户端唤醒, 处理用户发来的消息
+					// 客户端唤醒, 处理用户发来的消息
 					memset(szBuff, 0, m_nBuffSize);
 
-					if (m_NetNode.eNetType == ENetType::TCP)
+					if (eNetType == ENetType::TCP)
 						nResult = recv(Event[i].data.fd, szBuff, m_nBuffSize, 0);
-					else if (m_NetNode.eNetType == ENetType::UDP)
+					else if (eNetType == ENetType::UDP)
 					{
 						nResult = recvfrom(Event[i].data.fd, szBuff, m_nBuffSize, 0,
 							(stSockaddr*)NetNode.Addr, &nLen);
@@ -1086,21 +1083,21 @@ namespace tinynet
 					if (*(unsigned int*)szBuff == kHeartId)
 					{
 						// 心跳包
-						if (m_NetNode.eNetType == ENetType::TCP)
+						if (eNetType == ENetType::TCP)
 							send(Event[i].data.fd, szBuff, nResult, 0);
-						else if (m_NetNode.eNetType == ENetType::UDP)
+						else if (eNetType == ENetType::UDP)
 							NetNode.Send(szBuff, nResult);
 						if (fnEventCallback) fnEventCallback(ENetEvent::Heart, "");
 					}
 					else if (fnRecvCallback)
 					{
-						if (m_NetNode.eNetType == ENetType::TCP)
+						if (eNetType == ENetType::TCP)
 						{
 							auto it = m_mNodes.find(Event[i].data.fd);
 							if (it != m_mNodes.end())
 								fnRecvCallback(&it->second, std::string(szBuff, nResult));
 						}
-						else if (m_NetNode.eNetType == ENetType::UDP)
+						else if (eNetType == ENetType::UDP)
 							fnRecvCallback(&NetNode, std::string(szBuff, nResult));
 					}
 				}
@@ -1175,7 +1172,6 @@ namespace tinynet
 #pragma region client
 	CTinyClient::CTinyClient()
 	{
-
 	}
 
 	CTinyClient::~CTinyClient()
@@ -1183,55 +1179,12 @@ namespace tinynet
 		Stop();
 	}
 
-	bool CTinyClient::Start(const ENetType n_eType, 
-		const std::string& n_sHost, const int n_nPort)
+	bool CTinyClient::Start()
 	{
-		if (m_NetNode.fd > 0) return false;
+		if (IsValid()) return false;
 
-		ITinyNet::Start(n_eType, n_sHost, n_nPort);
-
-		int nResult = 0;
-		bool bResult = false;
-
-		int nSockType = NetType2SockType(m_NetNode.eNetType);
-
-		do
-		{
-			m_NetNode.fd = socket(AF_INET, nSockType, 0);
-			if (m_NetNode.fd == SOCKET_ERROR)
-			{
-				DebugError("create Socket error: %d\n", LastError());
-				break;
-			}
-
-			KeepAlive(1);
-			//SetTimeout(-1);
-			ReuseAddr(1);
-
-			stSockaddrIn Addr{};
-			Addr.sin_family = AF_INET;
-			Addr.sin_port = htons(m_NetNode.nPort);
-			inet_pton(AF_INET, m_NetNode.sHost, &Addr.sin_addr.s_addr);
-
-			nResult = connect(m_NetNode.fd, (stSockaddr*)&Addr, sizeof(stSockaddrIn));
-			if (nResult == SOCKET_ERROR)
-			{
-				DebugError("connect Socket error: %d\n", LastError());
-				break;
-			}
-
-			Join();
-			m_thread = std::thread(&CTinyClient::WorkerThread, this);
-
-			if (fnEventCallback) fnEventCallback(ENetEvent::Ready, "");
-
-			bResult = true;
-
-		} while (false);
-
-		m_bRun = bResult;
-
-		return bResult;
+		m_bRun = InitSock();
+		return m_bRun;
 	}
 
 	void CTinyClient::Stop()
@@ -1242,7 +1195,7 @@ namespace tinynet
 		ITinyNet::Stop();
 
 		// 关闭Socket
-		CloseSocket(m_NetNode.fd);
+		CloseSocket(fd);
 
 		Join();
 	}
@@ -1254,6 +1207,46 @@ namespace tinynet
 		std::thread(&CTinyClient::HeartThread, this, n_nPeriod).detach();
 	}
 
+
+	bool CTinyClient::InitSock()
+	{
+		int nResult = 0;
+		bool bResult = false;
+
+		int nSockType = NetType2SockType(eNetType);
+
+		do
+		{
+			fd = socket(AF_INET, nSockType, 0);
+			if (fd == SOCKET_ERROR)
+			{
+				DebugError("create Socket error: %d\n", LastError());
+				break;
+			}
+
+			KeepAlive(1);
+			//SetTimeout(-1);
+			ReuseAddr(1);
+
+			nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
+			if (nResult == SOCKET_ERROR)
+			{
+				DebugError("connect Socket error: %d\n", LastError());
+				break;
+			}
+
+			Join();
+			m_thread = std::thread(&CTinyClient::WorkerThread, this);
+
+			bResult = true;
+
+		} while (false);
+
+		m_bRun = bResult;
+
+		return bResult;
+	}
+
 	void CTinyClient::WorkerThread()
 	{
 		int nResult = 0;
@@ -1263,22 +1256,23 @@ namespace tinynet
 		memset(szBuff, 0, m_nBuffSize);
 
 		FNetNode	NetNode;
-		NetNode.fd = m_NetNode.fd;
-		NetNode.eNetType = m_NetNode.eNetType;
+		NetNode.fd = fd;
+		NetNode.eNetType = eNetType;
 
 		SockaddrLen	nLen = sizeof(stSockaddrIn);
+
+		if (fnEventCallback) fnEventCallback(ENetEvent::Ready, "");
 
 		while (true)
 		{
 			memset(szBuff, 0, m_nBuffSize);
 
-			if (m_NetNode.eNetType == ENetType::TCP)
-				nResult = recv(m_NetNode.fd, szBuff, m_nBuffSize, 0);
-			else if (m_NetNode.eNetType == ENetType::UDP)
+			if (eNetType == ENetType::TCP)
+				nResult = recv(fd, szBuff, m_nBuffSize, 0);
+			else if (eNetType == ENetType::UDP)
 			{
-				nResult = recvfrom(m_NetNode.fd, szBuff, m_nBuffSize, 0, 
+				nResult = recvfrom(fd, szBuff, m_nBuffSize, 0, 
 					(stSockaddr*)NetNode.Addr, &nLen);
-				NetNode.ParseAddr();
 			}
 
 			if (nResult == 0) break;
@@ -1295,16 +1289,14 @@ namespace tinynet
  			if (*(unsigned int*)szBuff == kHeartId)
 			{
 				// 心跳包
-				if (m_NetNode.eNetType == ENetType::TCP ||
-					(memcmp(m_NetNode.sHost, NetNode.sHost, IPADDR_SIZE) == 0 && 
-						m_NetNode.nPort == NetNode.nPort))
+				if (eNetType == ENetType::TCP || *this == NetNode)
 					m_nHeart = 1;
 			}
 			else if (fnRecvCallback)
 			{
-				if (m_NetNode.eNetType == ENetType::TCP)
-					fnRecvCallback(&m_NetNode, std::string(szBuff, nResult));
-				else if (m_NetNode.eNetType == ENetType::UDP)
+				if (eNetType == ENetType::TCP)
+					fnRecvCallback(this, std::string(szBuff, nResult));
+				else if (eNetType == ENetType::UDP)
 					fnRecvCallback(&NetNode, std::string(szBuff, nResult));
 			}
 		}
@@ -1313,9 +1305,7 @@ namespace tinynet
 
 		if (fnEventCallback)
 		{
-			std::string str = m_NetNode.sHost;
-			str += ":";
-			str += std::to_string(m_NetNode.nPort);
+			std::string str = m_NetNode.ToString();
 			fnEventCallback(ENetEvent::Quit, str);
 		}
 	}

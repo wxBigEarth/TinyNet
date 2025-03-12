@@ -24,17 +24,22 @@ namespace tinynet
 
 	enum class ENetEvent
 	{
+		// 启动就绪
 		Ready = 0,
+		// TCP 接收到客户端
 		Accept,
+		// 心跳包
 		Heart,
+		// 退出
 		Quit,
 	};
+
 	// 获取本机CPU核数
 	inline const unsigned int GetCpuNum();
 	// 获取本地IP
 	const std::string GetLocalIPAddress();
 
-	inline int LastError();
+	int LastError();
 
 	inline void CloseSocket(size_t& n_nSocket);
 
@@ -52,23 +57,22 @@ namespace tinynet
 
 	struct FNetNode
 	{
-		// 端口号
-		int				nPort = 0;
 		// 协议
 		ENetType		eNetType = ENetType::TCP;
 		// Socket
 		size_t			fd = 0;
 		char			Addr[SOCKADDR_SIZE] = {0};
-		// IP
-		char			sHost[IPADDR_SIZE] = { 0 };
 
 		void Init(const ENetType n_eType,
-			const std::string& n_sHost, const int n_nPort);
+			const std::string& n_sHost, const unsigned short n_nPort);
 
 		void Init(const ENetType n_eType, const stSockaddrIn* n_Addr);
 
-		// 从 stSockaddrIn 解析出IP和端口号
-		void ParseAddr();
+		// 端口号
+		const unsigned short Port();
+
+		// IP
+		const std::string Ip();
 
 		/// <summary>
 		/// 发送消息
@@ -88,23 +92,47 @@ namespace tinynet
 		/// <param name="n_nPort">目标端口</param>
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize,
-			const std::string& n_sHost, const int n_nPort) const;
+			const std::string& n_sHost, const unsigned short n_nPort) const;
 		int Send(const std::string& n_sData,
-			const std::string& n_sHost, const int n_nPort) const;
+			const std::string& n_sHost, const unsigned short n_nPort) const;
+
+		const bool IsValid() const;
+
+		const std::string ToString();
+
+		bool operator==(const FNetNode& n_NetNode);
 
 		void Clear();
 	};
 
 #pragma region 组播
+	class INetImpl
+	{
+	public:
+		INetImpl();
+		virtual ~INetImpl();
+
+	protected:
+		void Startup();
+		void Cleanup();
+
+	protected:
+#if defined(_WIN32) || defined(_WIN64)
+		static int m_nRef;
+#endif
+	}
+#pragma endregion
+
+#pragma region 组播
 	// 组播
-	class CMulticast
+	class CMulticast : public INetImpl
 	{
 	public:
 		CMulticast();
 		~CMulticast();
 
 		/// <summary>
-		/// 设置组播(发送端)
+		/// 初始化
 		/// </summary>
 		/// <param name="n_sHost">组播IP</param>
 		/// <param name="n_nPort">组播端口号</param>
@@ -121,17 +149,19 @@ namespace tinynet
 
 		239.0.0.0～239.255.255.255	本地管理组地址，仅在本地管理域内有效。在不同的管理域内重复使用相同的本地管理组地址不会导致冲突。
 		*/
-		int Sender(const std::string& n_sHost, const int n_nPort);
+		bool Init(const std::string& n_sHost, const unsigned short n_nPort);
+
+		/// <summary>
+		/// 启动组播(发送端)
+		/// </summary>
+		int Sender();
 
 		/// <summary>
 		/// 加入组播(接收端)
 		/// </summary>
-		/// <param name="n_sHost">组播IP</param>
-		/// <param name="n_nPort">组播端口号</param>
 		/// <param name="n_sLocalIP">本机IP，为空则自动获取</param>
 		/// <returns></returns>
-		int Receiver(const std::string& n_sHost, const int n_nPort,
-			const std::string& n_sLocalIP = "");
+		int Receiver(const std::string& n_sLocalIP = "");
 
 		/// <summary>
 		/// 退出组播
@@ -146,6 +176,7 @@ namespace tinynet
 		/// <param name="n_nSize">消息长度</param>
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize);
+		int Send(const std::string n_sData);
 
 		void SetRecvBuffSize(const int n_nSize);
 
@@ -163,7 +194,7 @@ namespace tinynet
 #pragma endregion
 
 #pragma region base
-	class ITinyNet
+	class ITinyNet : public INetImpl, public FNetNode
 	{
 	public:
 		ITinyNet();
@@ -172,38 +203,12 @@ namespace tinynet
 		/// <summary>
 		/// 启动Socket
 		/// </summary>
-		/// <param name="n_eType">Socket 类型</param>
-		/// <param name="n_sHost">IP</param>
-		/// <param name="n_nPort">端口号</param>
 		/// <returns></returns>
-		virtual bool Start(const ENetType n_eType,
-			const std::string& n_sHost, const int n_nPort);
+		virtual bool Start();
 		/// <summary>
 		/// 退出
 		/// </summary>
 		virtual void Stop();
-
-		/// <summary>
-		/// 发送消息
-		/// </summary>
-		/// <param name="n_szData">消息内容</param>
-		/// <param name="n_nSize">消息长度</param>
-		/// <returns></returns>
-		int Send(const char* n_szData, const int n_nSize);
-		int Send(const std::string& n_sData);
-
-		/// <summary>
-		/// 发送UDP消息给服务端外的用户
-		/// </summary>
-		/// <param name="n_szData">消息内容</param>
-		/// <param name="n_nSize">消息长度</param>
-		/// <param name="n_sHost">目标IP</param>
-		/// <param name="n_nPort">目标端口</param>
-		/// <returns></returns>
-		int Send(const char* n_szData, const int n_nSize,
-			const std::string& n_sHost, const int n_nPort);
-		int Send(const std::string& n_sData,
-			const std::string& n_sHost, const int n_nPort);
 
 		/// <summary>
 		/// 启用心跳包
@@ -211,8 +216,6 @@ namespace tinynet
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
 		virtual void EnableHeart(int n_nPeriod);
 		
-		const bool IsValid() const;
-
 		int KeepAlive(int n_nAlive = 1) const;
 		// 设置超时，建议在Start前设置
 		int SetTimeout(int n_nMilliSeconds);
@@ -221,16 +224,10 @@ namespace tinynet
 
 		void SetRecvBuffSize(const int n_nSize);
 
-		FNetNode& ThisNode();
-
 		// 事件回调
 		std::function<void(const ENetEvent, const std::string&)> fnEventCallback = nullptr;
 		// 数据接收回调
 		std::function<void(FNetNode*, const std::string&)> fnRecvCallback = nullptr;
-
-	protected:
-		void Startup();
-		void Cleanup();
 
 	protected:
 		int			m_nBuffSize = 1024;
@@ -239,10 +236,6 @@ namespace tinynet
 		FNetNode	m_NetNode;
 
 		bool		m_bRun = false;
-
-#if defined(_WIN32) || defined(_WIN64)
-		static int m_nRef;
-#endif
 	};
 #pragma endregion
 
@@ -254,9 +247,7 @@ namespace tinynet
 		CTinyServer();
 		~CTinyServer();
 
-		bool Start(const ENetType n_eType, 
-			const std::string& n_sHost, const int n_nPort) override;
-
+		bool Start() override;
 		void Stop() override;
 
 	protected:
@@ -279,7 +270,9 @@ namespace tinynet
 		bool InitSock();
 		void WorkerThread();
 
+	public:
 		void SetEt(const bool et = true);
+	protected:
 		int SetNonblock(int n_nFd);
 		int AddSocketIntoPoll(int n_nFd);
 		int DelSocketFromPoll(int n_nFd);
@@ -308,9 +301,7 @@ namespace tinynet
 		CTinyClient();
 		~CTinyClient();
 
-		bool Start(const ENetType n_eType, 
-			const std::string& n_sHost, const int n_nPort) override;
-
+		bool Start() override;
 		void Stop() override;
 
 		/// <summary>
@@ -320,6 +311,7 @@ namespace tinynet
 		void EnableHeart(int n_nPeriod) override;
 
 	protected:
+		bool InitSock();
 		void WorkerThread();
 		void HeartThread(int n_nPeriod);
 		void Join();

@@ -19,6 +19,33 @@ using namespace tinynet;
 #define PORT 8000
 #define MULTICAST "239.0.0.1"
 
+// 组播发送端
+void MulticastSender()
+{
+	CMulticast mc;
+
+	mc.Init(MULTICAST, PORT);
+	mc.Sender();
+
+	int nSendLen = 0;
+	char szOutMsg[1024] = { 0 };
+
+	while (true)
+	{
+		std::cout << ">>";
+		std::cin >> szOutMsg;
+		if (strcmp(szOutMsg, "quit") == 0) break;
+
+		nSendLen = mc.Send(szOutMsg, (int)strlen(szOutMsg));
+
+		if (nSendLen < 0) std::cout << ">> Error: " << LastError() << std::endl;
+		memset(szOutMsg, 0, 1024);
+	}
+
+	mc.Release();
+}
+
+
 int main()
 {
 	CTinyServer rs;
