@@ -214,7 +214,7 @@ namespace tinynet
 		/// 启用心跳包
 		/// </summary>
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
-		virtual void EnableHeart(int n_nPeriod);
+		virtual void EnableHeart(unsigned int n_nPeriod);
 		
 		int KeepAlive(int n_nAlive = 1) const;
 		// 设置超时，建议在Start前设置
@@ -224,16 +224,25 @@ namespace tinynet
 
 		void SetRecvBuffSize(const int n_nSize);
 
-		// 事件回调
-		std::function<void(const ENetEvent, const std::string&)> fnEventCallback = nullptr;
-		// 数据接收回调
+		/// <summary>
+		/// 事件回调
+		/// </summary>
+		/// <param name="FNetNode*">产生事件的Socket节点</param>
+		/// <param name="const ENetEvent">事件类型</param>
+		/// <param name="const std::string&">事件消息</param>
+		std::function<void(FNetNode*, const ENetEvent, const std::string&)> fnEventCallback = nullptr;
+
+		/// <summary>
+		/// 数据接收回调
+		/// </summary>
+		/// <param name="FNetNode*">产生数据的Socket节点</param>
+		/// <param name="const std::string&">接收的数据</param>
 		std::function<void(FNetNode*, const std::string&)> fnRecvCallback = nullptr;
 
 	protected:
 		int			m_nBuffSize = 1024;
 		// 默认3秒超时
 		int			m_nTimeout = 3000;
-		FNetNode	m_NetNode;
 
 		bool		m_bRun = false;
 	};
@@ -308,7 +317,8 @@ namespace tinynet
 		/// 启用心跳包
 		/// </summary>
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
-		void EnableHeart(int n_nPeriod) override;
+		/// 周期为0 表示禁用，默认禁用
+		void EnableHeart(unsigned int n_nPeriod) override;
 
 	protected:
 		bool InitSock();
@@ -320,8 +330,10 @@ namespace tinynet
 
 	protected:
 		std::thread	m_thread;
-
-		int			m_nHeart = -1;
+		// 心跳序号
+		unsigned int	m_nHeartNo = 0;
+		// 心跳周期
+		unsigned int	m_nHeartPeriod = 0;
 	};
 #pragma endregion
 }

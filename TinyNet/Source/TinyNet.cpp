@@ -461,10 +461,9 @@ namespace tinynet
 
 	void ITinyNet::Stop()
 	{
-		//if (fnEventCallback) fnEventCallback(ENetEvent::Quit, "");
 	}
 
-	void ITinyNet::EnableHeart(int n_nPeriod)
+	void ITinyNet::EnableHeart(unsigned int n_nPeriod)
 	{
 	}
 
@@ -595,8 +594,7 @@ namespace tinynet
 	{
 		if (IsValid()) return false;
 
-		m_bRun = InitSock();
-		return m_bRun;
+		return InitSock();
 	}
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -625,7 +623,7 @@ namespace tinynet
 		CloseHandle(m_hIocp);
 		m_hIocp = nullptr;
 
-		if (fnEventCallback) fnEventCallback(ENetEvent::Quit, "");
+		if (fnEventCallback) fnEventCallback(this, ENetEvent::Quit, "");
 	}
 #else
 	void CTinyServer::Stop()
@@ -640,7 +638,7 @@ namespace tinynet
 		close(m_nEpfd);
 		m_nEpfd = 0;
 
-		if (fnEventCallback) fnEventCallback(ENetEvent::Quit, "");
+		if (fnEventCallback) fnEventCallback(this, ENetEvent::Quit, "");
 	}
 #endif
 
@@ -648,12 +646,13 @@ namespace tinynet
 	bool CTinyServer::InitSock()
 	{
 		int nResult = 0;
-		bool bResult = false;
 
 		int nSockType = NetType2SockType(eNetType);
 
 		do
 		{
+			m_bRun = false;
+
 			m_hIocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 			if (!m_hIocp)
 			{
@@ -707,15 +706,15 @@ namespace tinynet
 				PostRecv(UdpHandle);
 			}
 
-			if (fnEventCallback) fnEventCallback(ENetEvent::Ready, "");
+			if (fnEventCallback) fnEventCallback(this, ENetEvent::Ready, ToString());
 
-			bResult = true;
+			m_bRun = true;
 
 		} while (false);
 
-		if (!bResult) CloseSocket(fd);
+		if (!m_bRun) CloseSocket(fd);
 
-		return bResult;
+		return m_bRun;
 	}
 
 	void CTinyServer::Accept()
@@ -743,7 +742,7 @@ namespace tinynet
 			if (fnEventCallback)
 			{
 				std::string str = TcpHandle->NetNode.ToString();
-				fnEventCallback(ENetEvent::Accept, str);
+				fnEventCallback(&TcpHandle->NetNode, ENetEvent::Accept, str);
 			}
 
 			CreateIoCompletionPort(
@@ -813,8 +812,19 @@ namespace tinynet
 				if (*(unsigned int*)pSocketInfo->Buffer == kHeartId)
 				{
 					// 心跳包
+					auto p = (unsigned int*)(pSocketInfo->Buffer + sizeof(unsigned int));
+					if (fnEventCallback)
+					{
+						fnEventCallback(&pSocketInfo->NetNode,
+							ENetEvent::Heart, 
+							pSocketInfo->NetNode.ToString() + std::to_string(*p);
+						);
+					}
+
+					if (*p == 0xFFFFFFFF) *p = 0;
+					else (*p)++;
+
 					pSocketInfo->NetNode.Send(pSocketInfo->Buffer, nRecvBytes);
-					if (fnEventCallback) fnEventCallback(ENetEvent::Heart, "");
 				}
 				else
 				{
@@ -912,7 +922,7 @@ namespace tinynet
 			{
 				// 抛出退出事件
 				std::string str = Handle->NetNode.ToString();
-				fnEventCallback(ENetEvent::Quit, str);
+				fnEventCallback(&Handle->NetNode, ENetEvent::Quit, str);
 			}
 
 			m_mNodes.erase(it);
@@ -941,12 +951,13 @@ namespace tinynet
 	bool CTinyServer::InitSock()
 	{
 		int nResult = 0;
-		bool bResult = false;
 
 		int nSockType = NetType2SockType(eNetType);
 
 		do
 		{
+			m_bRun = false;
+
 			fd = socket(AF_INET, nSockType, 0);
 			if (fd == -1)
 			{
@@ -992,15 +1003,15 @@ namespace tinynet
 
 			std::thread(&CTinyServer::WorkerThread, this).detach();
 
-			if (fnEventCallback) fnEventCallback(ENetEvent::Ready, "");
+			if (fnEventCallback) fnEventCallback(this, ENetEvent::Ready, ToString());
 
-			bResult = true;
+			m_bRun = true;
 
 		} while (false);
 
-		if (!bResult) CloseSocket(fd);
+		if (!m_bRun) CloseSocket(fd);
 
-		return bResult;
+		return m_bRun;
 	}
 
 	void CTinyServer::WorkerThread()
@@ -1051,12 +1062,12 @@ namespace tinynet
 					FNetNode RemoteNetNode;
 					RemoteNetNode.fd = nFd;
 					RemoteNetNode.Init(ENetType::TCP, &RemoteAddr);
-					m_mNodes.insert({ nFd, RemoteNetNode });
+					auto pair = m_mNodes.insert({ nFd, RemoteNetNode });
 
 					if (fnEventCallback)
 					{
 						std::string str = RemoteNetNode.ToString();
-						fnEventCallback(ENetEvent::Accept, str);
+						fnEventCallback(&pair.first->second, ENetEvent::Accept, str);
 					}
 				}
 				else
@@ -1083,11 +1094,31 @@ namespace tinynet
 					if (*(unsigned int*)szBuff == kHeartId)
 					{
 						// 心跳包
+						auto p = (unsigned int*)(szBuff + sizeof(unsigned int));
+						if (fnEventCallback) 
+						{
+							if (eNetType == ENetType::TCP)
+							{
+								auto it = m_mNodes.find(Event[i].data.fd);
+								if (it != m_mNodes.end())
+								{
+									fnEventCallback(&it->second, 
+										ENetEvent::Heart, 
+										it->second.ToString() + std::to_string(*p));
+								}
+							}
+							else if (eNetType == ENetType::UDP)
+							{
+								fnEventCallback(&NetNode, 
+									ENetEvent::Heart, 
+									NetNode.ToString() + std::to_string(*p));
+							}
+						}
+
 						if (eNetType == ENetType::TCP)
 							send(Event[i].data.fd, szBuff, nResult, 0);
 						else if (eNetType == ENetType::UDP)
 							NetNode.Send(szBuff, nResult);
-						if (fnEventCallback) fnEventCallback(ENetEvent::Heart, "");
 					}
 					else if (fnRecvCallback)
 					{
@@ -1183,13 +1214,13 @@ namespace tinynet
 	{
 		if (IsValid()) return false;
 
-		m_bRun = InitSock();
-		return m_bRun;
+		return InitSock();
 	}
 
 	void CTinyClient::Stop()
 	{
-		m_nHeart = -1;
+		m_nHeartNo = 0;
+		m_nHeartPeriod = 0;
 		m_bRun = false;
 
 		ITinyNet::Stop();
@@ -1200,23 +1231,23 @@ namespace tinynet
 		Join();
 	}
 
-	void CTinyClient::EnableHeart(int n_nPeriod)
+	void CTinyClient::EnableHeart(unsigned int n_nPeriod)
 	{
-		if (m_nHeart >= 0 || !IsValid()) return;
-		m_nHeart = 0;
-		std::thread(&CTinyClient::HeartThread, this, n_nPeriod).detach();
+		m_nHeartNo = 0;
+		m_nHeartPeriod = n_nPeriod;
 	}
 
 
 	bool CTinyClient::InitSock()
 	{
 		int nResult = 0;
-		bool bResult = false;
 
 		int nSockType = NetType2SockType(eNetType);
 
 		do
 		{
+			m_bRun = false;
+
 			fd = socket(AF_INET, nSockType, 0);
 			if (fd == SOCKET_ERROR)
 			{
@@ -1238,13 +1269,11 @@ namespace tinynet
 			Join();
 			m_thread = std::thread(&CTinyClient::WorkerThread, this);
 
-			bResult = true;
+			m_bRun = true;
 
 		} while (false);
 
-		m_bRun = bResult;
-
-		return bResult;
+		return m_bRun;
 	}
 
 	void CTinyClient::WorkerThread()
@@ -1261,7 +1290,9 @@ namespace tinynet
 
 		SockaddrLen	nLen = sizeof(stSockaddrIn);
 
-		if (fnEventCallback) fnEventCallback(ENetEvent::Ready, "");
+		if (fnEventCallback) fnEventCallback(this, ENetEvent::Ready, ToString());
+		if (m_nHeartPeriod > 0)
+			std::thread(&CTinyClient::HeartThread, this).detach();
 
 		while (true)
 		{
@@ -1303,33 +1334,48 @@ namespace tinynet
 
 		free(szBuff);
 
-		if (fnEventCallback)
-		{
-			std::string str = m_NetNode.ToString();
-			fnEventCallback(ENetEvent::Quit, str);
-		}
+		if (fnEventCallback) fnEventCallback(ENetEvent::Quit, ToString());
 	}
 
-	void CTinyClient::HeartThread(int n_nPeriod)
+	void CTinyClient::HeartThread()
 	{
 		int nRet = 0;
 
-		while (m_bRun)
+		const int nSlice = 500;
+		unsigned int nCounter = m_nHeartPeriod;
+		unsigned int nHeartNo = 0xFFFFFFFF;
+
+		m_nHeartNo = 0;
+
+		while (m_bRun && m_nHeartPeriod > 0)
 		{
-			m_nHeart = 0;
-			nRet = SendHeart();
-			if (nRet < 0)
+			if (nCounter < m_nHeartPeriod)
 			{
-				Stop();
-				break;
+				nCounter += nSlice;
+				std::this_thread::sleep_for(std::chrono::milliseconds(nSlice));
+				continue;
 			}
 
-			if (fnEventCallback) fnEventCallback(ENetEvent::Heart, "");
-			std::this_thread::sleep_for(std::chrono::milliseconds(n_nPeriod));
+			// 未接收到返回心跳，默认连接异常，退出
+			if (m_nHeartNo == nHeartNo) break;
 
-			if (m_nHeart == 0)
-				Stop();
+			nRet = SendHeart();
+			if (nRet < 0) break;
+
+			nCounter = 0;
+			nHeartNo = m_nHeartNo;
+
+			if (fnEventCallback)
+			{
+				fnEventCallback(this, 
+					ENetEvent::Heart, 
+					ToString() + std::to_string(nHeartNo)
+				);
+			}
 		}
+
+		// 无法发送心跳或接收心跳超时，停止
+		if (m_nHeartNo == nHeartNo || nRet < 0) Stop();
 	}
 
 	void CTinyClient::Join()

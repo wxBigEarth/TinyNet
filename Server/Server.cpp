@@ -50,21 +50,21 @@ int main()
 {
 	CTinyServer rs;
 
-	rs.fnEventCallback = [&](const ENetEvent e, const std::string& s) {
+	rs.fnEventCallback = [&](FNetNode* pNode, const ENetEvent e, const std::string& s) {
 
 		switch (e)
 		{
 		case ENetEvent::Ready:
-			cout << "Socket Ready" << endl;
+			cout << "Socket Ready: " << s.c_str() << endl;
 			break;
 		case ENetEvent::Accept:
 			cout << "Accept: " << s.c_str() << endl;
 			break;
+		case ENetEvent::Heart:
+			cout << "Heart Beat: " << s.c_str() << endl;
+			break;
 		case ENetEvent::Quit:
 			cout << "Socket Quit: " << s.c_str() << endl;
-			break;
-		case ENetEvent::Heart:
-			cout << "Heart Beat" << endl;
 			break;
 		}
 	};
@@ -78,7 +78,7 @@ int main()
 
 	if (rs.Start(TYPE, HOST, PORT))
 	{
-		while (getchar() != '\n');
+		getchar();
 	}
 
 	return 0;

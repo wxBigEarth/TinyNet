@@ -39,21 +39,21 @@ int main()
 	auto ip = GetLocalIPAddress();
 	cout << "ip: " << ip.c_str() << endl;
 
-	rc.fnEventCallback = [&](const ENetEvent e, const std::string& s) {
+	rc.fnEventCallback = [&](FNetNode* pNode, const ENetEvent e, const std::string& s) {
 
 		switch (e)
 		{
 		case ENetEvent::Ready:
-			cout << "Socket Ready" << endl;
+			cout << "Socket Ready: " << s.c_str() << endl;
 			break;
 		case ENetEvent::Accept:
 			cout << "Accept: " << s.c_str() << endl;
 			break;
+		case ENetEvent::Heart:
+			cout << "Heart Beat: " << s.c_str() << endl;
+			break;
 		case ENetEvent::Quit:
 			cout << "Socket Quit: " << s.c_str() << endl;
-			break;
-		case ENetEvent::Heart:
-			cout << "Heart Beat" << endl;
 			break;
 		}
 	};
