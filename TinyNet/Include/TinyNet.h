@@ -120,7 +120,7 @@ namespace tinynet
 #if defined(_WIN32) || defined(_WIN64)
 		static int m_nRef;
 #endif
-	}
+	};
 #pragma endregion
 
 #pragma region 组播
@@ -323,7 +323,7 @@ namespace tinynet
 	protected:
 		bool InitSock();
 		void WorkerThread();
-		void HeartThread(int n_nPeriod);
+		void HeartThread();
 		void Join();
 		// 发送心跳包
 		int SendHeart();
