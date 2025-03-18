@@ -41,6 +41,12 @@ namespace tinynet
 
 	int LastError();
 
+	// 从 sockaddr 获取端口号
+	inline unsigned short GetPort(char* n_szAddr);
+
+	// 从 sockaddr 获取IP
+	inline std::string GetIp(char* n_szAddr);
+
 	inline void CloseSocket(size_t& n_nSocket);
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -55,6 +61,21 @@ namespace tinynet
 #define IPADDR_SIZE 16
 #define SOCKADDR_SIZE 16
 
+#pragma region 心跳包结构
+	struct FHeart
+	{
+		// 消息Id，系统维护
+		unsigned int Id = 0;
+		// 发送者，系统维护
+		unsigned int Sender = 0;
+		// 序号，若心跳返回，则序号会递增
+		unsigned int No = 0;
+		// 失败次数，更新序号时需重置
+		unsigned int Cnt = 0;
+	};
+#pragma endregion
+
+#pragma region 节点
 	struct FNetNode
 	{
 		// 协议
@@ -96,6 +117,15 @@ namespace tinynet
 		int Send(const std::string& n_sData,
 			const std::string& n_sHost, const unsigned short n_nPort) const;
 
+		/// <summary>
+		/// 发送心跳包
+		/// </summary>
+		/// <param name="n_nNo">心跳序号</param>
+		/// <param name="n_nFailCnt">序号失败次数</param>
+		/// <returns></returns>
+		/// 心跳包数据为2个unsigned int 组成，分别是 序号-失败次数
+		int Heart(unsigned int n_nNo, unsigned int n_nFailCnt);
+
 		const bool IsValid() const;
 
 		const std::string ToString();
@@ -104,6 +134,7 @@ namespace tinynet
 
 		void Clear();
 	};
+#pragma endregion
 
 #pragma region 组播
 	class INetImpl
@@ -214,7 +245,8 @@ namespace tinynet
 		/// 启用心跳包
 		/// </summary>
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
-		virtual void EnableHeart(unsigned int n_nPeriod);
+		/// <param name="n_nTimeoutCnt">心跳允许超时次数</param>
+		virtual void EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt);
 		
 		int KeepAlive(int n_nAlive = 1) const;
 		// 设置超时，建议在Start前设置
@@ -258,6 +290,13 @@ namespace tinynet
 
 		bool Start() override;
 		void Stop() override;
+
+		// 获取 TCP 客户端
+#if defined(_WIN32) || defined(_WIN64)
+		const std::map<FNetNode*, void*>& GetClients();
+#else
+		const std::map<int, FNetNode>& GetClients();
+#endif
 
 	protected:
 #if defined(_WIN32) || defined(_WIN64)
@@ -317,23 +356,37 @@ namespace tinynet
 		/// 启用心跳包
 		/// </summary>
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
+		/// <param name="n_nTimeoutCnt">心跳允许超时次数</param>
 		/// 周期为0 表示禁用，默认禁用
-		void EnableHeart(unsigned int n_nPeriod) override;
+		void EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt) override;
+
+		// 设置从服务端返回的 sockaddr 数据
+		void SetRemoteAddr(char* n_szBuff, int n_nSize);
+
+		// 获取在服务端的识别号
+		const unsigned short RemotePort();
+
+		// 获取在服务端的 IP
+		const std::string RemoteIp();
 
 	protected:
 		bool InitSock();
 		void WorkerThread();
+		// 心跳线程
 		void HeartThread();
 		void Join();
-		// 发送心跳包
-		int SendHeart();
 
 	protected:
 		std::thread	m_thread;
+
+		// 在服务端的 IP 和 端口号信息
+		char			m_szRemoteAddr[SOCKADDR_SIZE] = {0};
 		// 心跳序号
 		unsigned int	m_nHeartNo = 0;
 		// 心跳周期
 		unsigned int	m_nHeartPeriod = 0;
+		// 心跳允许超时次数
+		unsigned int 	m_nHeartTimeoutCnt = 0;
 	};
 #pragma endregion
 }

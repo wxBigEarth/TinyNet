@@ -55,23 +55,23 @@ int main()
 		switch (e)
 		{
 		case ENetEvent::Ready:
-			cout << "Socket Ready: " << s.c_str() << endl;
+			cout << "Socket Ready: " << s << endl;
 			break;
 		case ENetEvent::Accept:
-			cout << "Accept: " << s.c_str() << endl;
+			cout << "Accept: " << s << endl;
 			break;
 		case ENetEvent::Heart:
-			cout << "Heart Beat: " << s.c_str() << endl;
+			cout << "Heart Beat: " << s << endl;
 			break;
 		case ENetEvent::Quit:
-			cout << "Socket Quit: " << s.c_str() << endl;
+			cout << "Socket Quit: " << s << endl;
 			break;
 		}
 	};
 
 	rs.fnRecvCallback = [&](FNetNode* pNode, const std::string& sData) {
 
-		cout << "Recv [" << sData.length() << "]: " << sData.c_str() << endl;
+		cout << "Recv [" << sData.length() << "]: " << sData << endl;
 
 		pNode->Send(sData);
 	};

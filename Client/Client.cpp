@@ -37,30 +37,30 @@ int main()
 	CTinyClient rc;
 
 	auto ip = GetLocalIPAddress();
-	cout << "ip: " << ip.c_str() << endl;
+	cout << "ip: " << ip << endl;
 
 	rc.fnEventCallback = [&](FNetNode* pNode, const ENetEvent e, const std::string& s) {
 
 		switch (e)
 		{
 		case ENetEvent::Ready:
-			cout << "Socket Ready: " << s.c_str() << endl;
+			cout << "Socket Ready: " << s << endl;
 			break;
 		case ENetEvent::Accept:
-			cout << "Accept: " << s.c_str() << endl;
+			cout << "Accept: " << s << endl;
 			break;
 		case ENetEvent::Heart:
-			cout << "Heart Beat: " << s.c_str() << endl;
+			cout << "Heart Beat: " << s << endl;
 			break;
 		case ENetEvent::Quit:
-			cout << "Socket Quit: " << s.c_str() << endl;
+			cout << "Socket Quit: " << s << endl;
 			break;
 		}
 	};
 
 	rc.fnRecvCallback = [&](FNetNode* pNode, const std::string& sData) {
 
-		cout << "Recv [" << sData.length() << "]: " << sData.c_str() << endl;
+		cout << "Recv [" << sData.length() << "]: " << sData << endl;
 	};
 	//rc.SetRecvBuffSize(8192);
 
@@ -68,7 +68,7 @@ int main()
 	if (rc.Start())
 	{
 		char szOutMsg[1024] = { 0 };
-		rc.EnableHeart(3000);
+		rc.EnableHeart(3000, 2);
 
 		int nSendLen = 0;
 		while (true)

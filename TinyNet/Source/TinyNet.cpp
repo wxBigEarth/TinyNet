@@ -47,6 +47,17 @@ namespace tinynet
 		return nType;
 	}
 
+	inline static stSockaddrIn* toSockaddrIn(void* n_szAddr) { return (stSockaddrIn*)n_szAddr; }
+
+	inline static void BuildSockAddrIn(void* n_Addr, const std::string& n_sHost, const unsigned short n_nPort)
+	{
+		stSockaddrIn* pSockaddrIn = (stSockaddrIn*)n_Addr;
+
+		toSockaddrIn(n_Addr)->sin_family = AF_INET;
+		toSockaddrIn(n_Addr)->sin_port = htons(n_nPort);
+		inet_pton(AF_INET, n_sHost.data(), &toSockaddrIn(n_Addr)->sin_addr.s_addr);
+	}
+
 	const std::string GetLocalIPAddress()
 	{
 		std::string sResult;
@@ -113,6 +124,23 @@ namespace tinynet
 #endif
 	}
 
+	inline unsigned short GetPort(char* n_szAddr)
+	{
+		return ntohs(toSockaddrIn(n_szAddr)->sin_port);
+	}
+
+	inline std::string GetIp(char* n_szAddr)
+	{
+		char sHost[IPADDR_SIZE] = { 0 };
+
+		inet_ntop(AF_INET,
+			&toSockaddrIn(n_szAddr)->sin_addr.s_addr,
+			sHost,
+			IPADDR_SIZE);
+
+		return std::string(sHost);
+	}
+
 	inline void CloseSocket(size_t& n_nSocket)
 	{
 		if (n_nSocket > 0)
@@ -126,17 +154,6 @@ namespace tinynet
 		}
 	}
 
-	static stSockaddrIn* toSockaddrIn(void* n_szAddr) { return (stSockaddrIn*)n_szAddr; }
-
-	static void BuildSockAddrIn(void* n_Addr, const std::string& n_sHost, const unsigned short n_nPort)
-	{
-		stSockaddrIn* pSockaddrIn = (stSockaddrIn*)n_Addr;
-
-		toSockaddrIn(n_Addr)->sin_family = AF_INET;
-		toSockaddrIn(n_Addr)->sin_port = htons(n_nPort);
-		inet_pton(AF_INET, n_sHost.data(), &toSockaddrIn(n_Addr)->sin_addr.s_addr);
-	}
-
 	////////////////////////////////////////////////////////////////////////////////
 	void FNetNode::Init(const ENetType n_eType,
 		const std::string& n_sHost, const unsigned short n_nPort)
@@ -148,27 +165,18 @@ namespace tinynet
 
 	void FNetNode::Init(const ENetType n_eType, const stSockaddrIn* n_Addr)
 	{
-		if (!n_Addr) return;
-
 		eNetType = n_eType;
-		memcpy(Addr, n_Addr, sizeof(stSockaddrIn));
+		if (n_Addr) memcpy(Addr, n_Addr, sizeof(stSockaddrIn));
 	}
 
 	const unsigned short FNetNode::Port()
 	{
-		return ntohs(toSockaddrIn(Addr)->sin_port);
+		return GetPort(Addr);
 	}
 
 	const std::string FNetNode::Ip()
 	{
-		char sHost[IPADDR_SIZE] = { 0 };
-
-		inet_ntop(AF_INET,
-			&toSockaddrIn(Addr)->sin_addr.s_addr,
-			sHost,
-			IPADDR_SIZE);
-
-		return std::string(sHost);
+		return GetIp(Addr);
 	}
 
 	int FNetNode::Send(const char* n_szData, const int n_nSize) const
@@ -216,6 +224,17 @@ namespace tinynet
 	const bool FNetNode::IsValid() const
 	{
 		return fd > 0;
+	}
+
+	int FNetNode::Heart(unsigned int n_nNo, unsigned int n_nFailCnt)
+	{
+		FHeart Heart;
+		Heart.Id = kHeartId;
+		Heart.Sender = (unsigned int)fd;
+		Heart.No = n_nNo;
+		Heart.Cnt = n_nFailCnt;
+		
+		return Send((const char*)&Heart, sizeof(FHeart));
 	}
 
 	const std::string FNetNode::ToString()
@@ -463,7 +482,7 @@ namespace tinynet
 	{
 	}
 
-	void ITinyNet::EnableHeart(unsigned int n_nPeriod)
+	void ITinyNet::EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt)
 	{
 	}
 
@@ -625,6 +644,11 @@ namespace tinynet
 
 		if (fnEventCallback) fnEventCallback(this, ENetEvent::Quit, "");
 	}
+
+	const std::map<FNetNode*, void*>& CTinyServer::GetClients()
+	{
+		return m_mNodes;
+	}
 #else
 	void CTinyServer::Stop()
 	{
@@ -639,6 +663,11 @@ namespace tinynet
 		m_nEpfd = 0;
 
 		if (fnEventCallback) fnEventCallback(this, ENetEvent::Quit, "");
+	}
+
+	const std::map<int, FNetNode>& CTinyServer::GetClients()
+	{
+		return m_mNodes;
 	}
 #endif
 
@@ -814,19 +843,21 @@ namespace tinynet
 				if (*(unsigned int*)pSocketInfo->Buffer == kHeartId)
 				{
 					// 心跳包
-					auto p = (unsigned int*)(pSocketInfo->Buffer + sizeof(unsigned int));
+					auto pHeart = (FHeart*)pSocketInfo->Buffer;
 					if (fnEventCallback)
 					{
 						fnEventCallback(&pSocketInfo->NetNode,
 							ENetEvent::Heart, 
-							pSocketInfo->NetNode.ToString() + std::to_string(*p)
+							std::string(pSocketInfo->Buffer, nRecvBytes)
 						);
 					}
 
-					if (*p == 0xFFFFFFFF) *p = 0;
-					else (*p)++;
-
-					pSocketInfo->NetNode.Send(pSocketInfo->Buffer, nRecvBytes);
+					// 客户端发的心跳包需回消息
+					if (pHeart->Sender != (unsigned int)fd)
+					{
+						pHeart->No++;
+						pSocketInfo->NetNode.Send(pSocketInfo->Buffer, nRecvBytes);
+					}
 				}
 				else
 				{
@@ -1083,7 +1114,6 @@ namespace tinynet
 					{
 						nResult = recvfrom(Event[i].data.fd, szBuff, m_nBuffSize, 0,
 							(stSockaddr*)NetNode.Addr, &nLen);
-						NetNode.ParseAddr();
 					}
 
 					if (nResult <= 0)
@@ -1096,8 +1126,8 @@ namespace tinynet
 					if (*(unsigned int*)szBuff == kHeartId)
 					{
 						// 心跳包
-						auto p = (unsigned int*)(szBuff + sizeof(unsigned int));
-						if (fnEventCallback) 
+						auto pHeart = (FHeart*)pSocketInfo->Buffer;
+						if (fnEventCallback)
 						{
 							if (eNetType == ENetType::TCP)
 							{
@@ -1106,21 +1136,29 @@ namespace tinynet
 								{
 									fnEventCallback(&it->second, 
 										ENetEvent::Heart, 
-										it->second.ToString() + std::to_string(*p));
+										std::string(szBuff, nResult)
+									);
 								}
 							}
 							else if (eNetType == ENetType::UDP)
 							{
 								fnEventCallback(&NetNode, 
 									ENetEvent::Heart, 
-									NetNode.ToString() + std::to_string(*p));
+									std::string(szBuff, nResult)
+								);
 							}
 						}
+	
+						// 客户端发的心跳包需回消息
+						if (pHeart->Sender != (unsigned int)fd)
+						{
+							pHeart->No++;
 
-						if (eNetType == ENetType::TCP)
-							send(Event[i].data.fd, szBuff, nResult, 0);
-						else if (eNetType == ENetType::UDP)
-							NetNode.Send(szBuff, nResult);
+							if (eNetType == ENetType::TCP)
+								send(Event[i].data.fd, szBuff, nResult, 0);
+							else if (eNetType == ENetType::UDP)
+								NetNode.Send(szBuff, nResult);
+						}
 					}
 					else if (fnRecvCallback)
 					{
@@ -1235,12 +1273,35 @@ namespace tinynet
 		Join();
 	}
 
-	void CTinyClient::EnableHeart(unsigned int n_nPeriod)
+	void CTinyClient::EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt)
 	{
 		m_nHeartNo = 0;
 		m_nHeartPeriod = n_nPeriod;
+		m_nHeartTimeoutCnt = n_nTimeoutCnt;
 	}
 
+	void CTinyClient::SetRemoteAddr(char* n_szBuff, int n_nSize)
+	{
+		if (!n_szBuff) return;
+
+#if defined(_WIN32) || defined(_WIN64)
+		memcpy_s(m_szRemoteAddr, SOCKADDR_SIZE, n_szBuff, n_nSize);
+#else
+		int n = n_nSize;
+		if (n > SOCKADDR_SIZE) n = SOCKADDR_SIZE;
+		memcpy(m_szRemoteAddr, n_szBuff, n);
+#endif
+	}
+
+	const unsigned short CTinyClient::RemotePort()
+	{
+		return GetPort(m_szRemoteAddr);
+	}
+
+	const std::string CTinyClient::RemoteIp()
+	{
+		return GetIp(m_szRemoteAddr);
+	}
 
 	bool CTinyClient::InitSock()
 	{
@@ -1324,8 +1385,25 @@ namespace tinynet
  			if (*(unsigned int*)szBuff == kHeartId)
 			{
 				// 心跳包
-				if (eNetType == ENetType::TCP || *this == NetNode)
-					m_nHeartNo = *(unsigned int*)(szBuff + sizeof(unsigned int));
+				auto pHeart = (FHeart*)szBuff;
+				if (fnEventCallback)
+				{
+					fnEventCallback(this,
+						ENetEvent::Heart, 
+						std::string(szBuff, nResult)
+					);
+				}
+
+				// 服务端发的心跳包需回消息
+				if (pHeart->Sender != (unsigned int)fd)
+				{
+					pHeart->No++;
+					Send(szBuff, nResult);
+				}
+				else 
+				{
+					m_nHeartNo = pHeart->No;
+				}
 			}
 			else if (fnRecvCallback)
 			{
@@ -1348,6 +1426,7 @@ namespace tinynet
 		const int nSlice = 500;
 		unsigned int nCounter = m_nHeartPeriod;
 		unsigned int nHeartNo = 0xFFFFFFFF;
+		unsigned int nFail = 0;
 
 		m_nHeartNo = 0;
 
@@ -1361,9 +1440,16 @@ namespace tinynet
 			}
 
 			// 未接收到返回心跳，默认连接异常，退出
-			if (m_nHeartNo == nHeartNo) break;
+			if (m_nHeartNo == nHeartNo) 
+			{
+				if (nFail >= m_nHeartTimeoutCnt) break;
+				else {
+					nFail++;
+				}
+			}
+			else nFail = 0;
 
-			nRet = SendHeart();
+			nRet = Heart(nHeartNo, nFail);
 			if (nRet < 0) break;
 
 			nCounter = 0;
@@ -1373,7 +1459,7 @@ namespace tinynet
 			{
 				fnEventCallback(this, 
 					ENetEvent::Heart, 
-					ToString() + std::to_string(nHeartNo)
+					std::to_string(nHeartNo)
 				);
 			}
 		}
@@ -1385,12 +1471,6 @@ namespace tinynet
 	void CTinyClient::Join()
 	{
 		if (m_thread.joinable()) m_thread.join();
-	}
-
-	int CTinyClient::SendHeart()
-	{
-		unsigned int nHeart[2] = { kHeartId, m_nHeartNo };
-		return Send((const char*)nHeart, sizeof(nHeart));
 	}
 
 #pragma endregion
