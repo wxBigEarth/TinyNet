@@ -55,16 +55,19 @@ int main()
 		switch (e)
 		{
 		case ENetEvent::Ready:
-			cout << "Socket Ready: " << s << endl;
+			cout << "Socket Ready: " << pNode->ToString() << endl;
 			break;
 		case ENetEvent::Accept:
-			cout << "Accept: " << s << endl;
+			cout << "Accept: " << pNode->ToString() << endl;
 			break;
 		case ENetEvent::Heart:
-			cout << "Heart Beat: " << s << endl;
+		{
+			auto p = (unsigned int*)s.data();
+			cout << "Heart Beat: " << pNode->ToString() << ": [" << p[0] << ":" << p[1] << "]" << endl;
+		}
 			break;
 		case ENetEvent::Quit:
-			cout << "Socket Quit: " << s << endl;
+			cout << "Socket Quit: " << pNode->ToString() << endl;
 			break;
 		}
 	};

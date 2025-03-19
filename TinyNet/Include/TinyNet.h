@@ -1,8 +1,9 @@
 #ifndef __TINYNET_H__
 #define __TINYNET_H__
-#include <map>
+#include <list>
 #include <string>
 #include <thread>
+#include <mutex>
 #include <functional>
 #include "Debug.h"
 
@@ -18,35 +19,38 @@ namespace tinynet
 	{
 		TCP = 0,
 		UDP,
-		// ×é²¥½ÓÊÕÕß
+		// ç»„æ’­æ¥æ”¶è€…
 		UDP_MULTICAST,
 	};
 
 	enum class ENetEvent
 	{
-		// Æô¶¯¾ÍĞ÷
+		// å¯åŠ¨å°±ç»ª
 		Ready = 0,
-		// TCP ½ÓÊÕµ½¿Í»§¶Ë
+		// TCP æ¥æ”¶åˆ°å®¢æˆ·ç«¯
 		Accept,
-		// ĞÄÌø°ü
+		// åˆå§‹åŒ–ï¼Œç”±å®¢æˆ·ç«¯å‘é€ï¼ŒæœåŠ¡ç«¯è¿”å›è¿œç«¯ sockaddr
+		Hello,
+		// å¿ƒè·³åŒ…ï¼Œäº‹ä»¶æ¶ˆæ¯è¿”å›unsigned int æ•°ç»„ï¼Œä¾æ¬¡æ˜¯ï¼šåºå·-å¤±è´¥æ¬¡æ•°
 		Heart,
-		// ÍË³ö
+		// é€€å‡º
 		Quit,
 	};
 
-	// »ñÈ¡±¾»úCPUºËÊı
+	// è·å–æœ¬æœºCPUæ ¸æ•°
 	inline const unsigned int GetCpuNum();
-	// »ñÈ¡±¾µØIP
+	// è·å–æœ¬åœ°IP
 	const std::string GetLocalIPAddress();
 
 	int LastError();
 
-	// ´Ó sockaddr »ñÈ¡¶Ë¿ÚºÅ
+	// ä» sockaddr è·å–ç«¯å£å·
 	inline unsigned short GetPort(char* n_szAddr);
 
-	// ´Ó sockaddr »ñÈ¡IP
+	// ä» sockaddr è·å–IP
 	inline std::string GetIp(char* n_szAddr);
 
+	// å…³é—­ socket
 	inline void CloseSocket(size_t& n_nSocket);
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -60,25 +64,12 @@ namespace tinynet
 
 #define IPADDR_SIZE 16
 #define SOCKADDR_SIZE 16
+#define EVENTMSGDATA_SIZE 16
 
-#pragma region ĞÄÌø°ü½á¹¹
-	struct FHeart
-	{
-		// ÏûÏ¢Id£¬ÏµÍ³Î¬»¤
-		unsigned int Id = 0;
-		// ·¢ËÍÕß£¬ÏµÍ³Î¬»¤
-		unsigned int Sender = 0;
-		// ĞòºÅ£¬ÈôĞÄÌø·µ»Ø£¬ÔòĞòºÅ»áµİÔö
-		unsigned int No = 0;
-		// Ê§°Ü´ÎÊı£¬¸üĞÂĞòºÅÊ±ĞèÖØÖÃ
-		unsigned int Cnt = 0;
-	};
-#pragma endregion
-
-#pragma region ½Úµã
+#pragma region é”ŸèŠ‚ç¢‰æ‹·
 	struct FNetNode
 	{
-		// Ğ­Òé
+		// åè®®
 		ENetType		eNetType = ENetType::TCP;
 		// Socket
 		size_t			fd = 0;
@@ -89,42 +80,33 @@ namespace tinynet
 
 		void Init(const ENetType n_eType, const stSockaddrIn* n_Addr);
 
-		// ¶Ë¿ÚºÅ
+		// ç«¯å£å·
 		const unsigned short Port();
 
 		// IP
 		const std::string Ip();
 
 		/// <summary>
-		/// ·¢ËÍÏûÏ¢
+		/// å‘é€æ¶ˆæ¯
 		/// </summary>
-		/// <param name="n_szData">ÏûÏ¢ÄÚÈİ</param>
-		/// <param name="n_nSize">ÏûÏ¢³¤¶È</param>
+		/// <param name="n_szData">æ¶ˆæ¯å†…å®¹</param>
+		/// <param name="n_nSize">æ¶ˆæ¯é•¿åº¦</param>
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize) const;
 		int Send(const std::string& n_sData) const;
 
 		/// <summary>
-		/// ·¢ËÍUDPÏûÏ¢¸ø·şÎñ¶ËÍâµÄÓÃ»§
+		/// å‘é€UDPæ¶ˆæ¯ç»™æœåŠ¡ç«¯å¤–çš„ç”¨æˆ·
 		/// </summary>
-		/// <param name="n_szData">ÏûÏ¢ÄÚÈİ</param>
-		/// <param name="n_nSize">ÏûÏ¢³¤¶È</param>
-		/// <param name="n_sHost">Ä¿±êIP</param>
-		/// <param name="n_nPort">Ä¿±ê¶Ë¿Ú</param>
+		/// <param name="n_szData">æ¶ˆæ¯å†…å®¹</param>
+		/// <param name="n_nSize">æ¶ˆæ¯é•¿åº¦</param>
+		/// <param name="n_sHost">ç›®æ ‡IP</param>
+		/// <param name="n_nPort">ç›®æ ‡ç«¯å£</param>
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize,
 			const std::string& n_sHost, const unsigned short n_nPort) const;
 		int Send(const std::string& n_sData,
 			const std::string& n_sHost, const unsigned short n_nPort) const;
-
-		/// <summary>
-		/// ·¢ËÍĞÄÌø°ü
-		/// </summary>
-		/// <param name="n_nNo">ĞÄÌøĞòºÅ</param>
-		/// <param name="n_nFailCnt">ĞòºÅÊ§°Ü´ÎÊı</param>
-		/// <returns></returns>
-		/// ĞÄÌø°üÊı¾İÎª2¸öunsigned int ×é³É£¬·Ö±ğÊÇ ĞòºÅ-Ê§°Ü´ÎÊı
-		int Heart(unsigned int n_nNo, unsigned int n_nFailCnt);
 
 		const bool IsValid() const;
 
@@ -133,10 +115,30 @@ namespace tinynet
 		bool operator==(const FNetNode& n_NetNode);
 
 		void Clear();
+
+	protected:
+		/// <summary>
+		/// åˆå§‹åŒ–ï¼Œç”±å®¢æˆ·ç«¯å‘é€
+		/// </summary>
+		int Hello();
+
+		/// <summary>
+		/// å‘é€å¿ƒè·³åŒ…
+		/// </summary>
+		/// <param name="n_nNo">å¿ƒè·³åºå·</param>
+		/// <param name="n_nFailCnt">åºå·å¤±è´¥æ¬¡æ•°</param>
+		/// <returns></returns>
+		/// å¿ƒè·³åŒ…æ•°æ®ä¸º2ä¸ªunsigned int ç»„æˆï¼Œåˆ†åˆ«æ˜¯ åºå·-å¤±è´¥æ¬¡æ•°
+		int Heart(unsigned int n_nNo, unsigned int n_nFailCnt);
+
+		/// <summary>
+		/// é€šçŸ¥æœåŠ¡ç«¯æˆ–å®¢æˆ·ç«¯é€€å‡º
+		/// </summary>
+		int Quit();
 	};
 #pragma endregion
 
-#pragma region ×é²¥
+#pragma region å…±é€šåŸºç±»
 	class INetImpl
 	{
 	public:
@@ -154,8 +156,7 @@ namespace tinynet
 	};
 #pragma endregion
 
-#pragma region ×é²¥
-	// ×é²¥
+#pragma region ç»„æ’­
 	class CMulticast : public INetImpl
 	{
 	public:
@@ -163,55 +164,55 @@ namespace tinynet
 		~CMulticast();
 
 		/// <summary>
-		/// ³õÊ¼»¯
+		/// åˆå§‹åŒ–
 		/// </summary>
-		/// <param name="n_sHost">×é²¥IP</param>
-		/// <param name="n_nPort">×é²¥¶Ë¿ÚºÅ</param>
+		/// <param name="n_sHost">ç»„æ’­IP</param>
+		/// <param name="n_nPort">ç»„æ’­ç«¯å£å·</param>
 		/*
-		µØÖ··¶Î§					º¬Òå
+		åœ°å€èŒƒå›´					å«ä¹‰
 
-		224.0.0.0¡«224.0.0.255		ÓÀ¾Ã×éµØÖ·¡£IANAÎªÂ·ÓÉĞ­ÒéÔ¤ÁôµÄIPµØÖ·£¨Ò²³ÆÎª±£Áô×éµØÖ·£©£¬
-									ÓÃÓÚ±êÊ¶Ò»×éÌØ¶¨µÄÍøÂçÉè±¸£¬¹©Â·ÓÉĞ­Òé¡¢ÍØÆË²éÕÒµÈÊ¹ÓÃ£¬²»ÓÃÓÚ×é²¥×ª·¢¡£
+		224.0.0.0ï½224.0.0.255		æ°¸ä¹…ç»„åœ°å€ã€‚IANAä¸ºè·¯ç”±åè®®é¢„ç•™çš„IPåœ°å€ï¼ˆä¹Ÿç§°ä¸ºä¿ç•™ç»„åœ°å€ï¼‰ï¼Œ
+									ç”¨äºæ ‡è¯†ä¸€ç»„ç‰¹å®šçš„ç½‘ç»œè®¾å¤‡ï¼Œä¾›è·¯ç”±åè®®ã€æ‹“æ‰‘æŸ¥æ‰¾ç­‰ä½¿ç”¨ï¼Œä¸ç”¨äºç»„æ’­è½¬å‘ã€‚
 
-		224.0.1.0¡«231.255.255.255	ASM×é²¥µØÖ·£¬È«Íø·¶Î§ÄÚÓĞĞ§¡£
-		233.0.0.0¡«238.255.255.255	ËµÃ÷£ºÆäÖĞ£¬224.0.1.39ºÍ224.0.1.40ÊÇ±£ÁôµØÖ·£¬²»½¨ÒéÊ¹ÓÃ¡£
+		224.0.1.0ï½231.255.255.255	ASMç»„æ’­åœ°å€ï¼Œå…¨ç½‘èŒƒå›´å†…æœ‰æ•ˆã€‚
+		233.0.0.0ï½238.255.255.255	è¯´æ˜ï¼šå…¶ä¸­ï¼Œ224.0.1.39å’Œ224.0.1.40æ˜¯ä¿ç•™åœ°å€ï¼Œä¸å»ºè®®ä½¿ç”¨ã€‚
 
-		232.0.0.0¡«232.255.255.255	È±Ê¡Çé¿öÏÂµÄSSM×é²¥µØÖ·£¬È«Íø·¶Î§ÄÚÓĞĞ§¡£
+		232.0.0.0ï½232.255.255.255	ç¼ºçœæƒ…å†µä¸‹çš„SSMç»„æ’­åœ°å€ï¼Œå…¨ç½‘èŒƒå›´å†…æœ‰æ•ˆã€‚
 
-		239.0.0.0¡«239.255.255.255	±¾µØ¹ÜÀí×éµØÖ·£¬½öÔÚ±¾µØ¹ÜÀíÓòÄÚÓĞĞ§¡£ÔÚ²»Í¬µÄ¹ÜÀíÓòÄÚÖØ¸´Ê¹ÓÃÏàÍ¬µÄ±¾µØ¹ÜÀí×éµØÖ·²»»áµ¼ÖÂ³åÍ»¡£
+		239.0.0.0ï½239.255.255.255	æœ¬åœ°ç®¡ç†ç»„åœ°å€ï¼Œä»…åœ¨æœ¬åœ°ç®¡ç†åŸŸå†…æœ‰æ•ˆã€‚åœ¨ä¸åŒçš„ç®¡ç†åŸŸå†…é‡å¤ä½¿ç”¨ç›¸åŒçš„æœ¬åœ°ç®¡ç†ç»„åœ°å€ä¸ä¼šå¯¼è‡´å†²çªã€‚
 		*/
 		bool Init(const std::string& n_sHost, const unsigned short n_nPort);
 
 		/// <summary>
-		/// Æô¶¯×é²¥(·¢ËÍ¶Ë)
+		/// å¯åŠ¨ç»„æ’­(å‘é€ç«¯)
 		/// </summary>
 		int Sender();
 
 		/// <summary>
-		/// ¼ÓÈë×é²¥(½ÓÊÕ¶Ë)
+		/// åŠ å…¥ç»„æ’­(æ¥æ”¶ç«¯)
 		/// </summary>
-		/// <param name="n_sLocalIP">±¾»úIP£¬Îª¿ÕÔò×Ô¶¯»ñÈ¡</param>
+		/// <param name="n_sLocalIP">æœ¬æœºIPï¼Œä¸ºç©ºåˆ™è‡ªåŠ¨è·å–</param>
 		/// <returns></returns>
 		int Receiver(const std::string& n_sLocalIP = "");
 
 		/// <summary>
-		/// ÍË³ö×é²¥
+		/// é€€å‡ºç»„æ’­
 		/// </summary>
 		/// <returns></returns>
 		int Release();
 
 		/// <summary>
-		/// ·¢ËÍ×é²¥ÏûÏ¢
+		/// å‘é€ç»„æ’­æ¶ˆæ¯
 		/// </summary>
-		/// <param name="n_szData">ÏûÏ¢ÄÚÈİ</param>
-		/// <param name="n_nSize">ÏûÏ¢³¤¶È</param>
+		/// <param name="n_szData">æ¶ˆæ¯å†…å®¹</param>
+		/// <param name="n_nSize">æ¶ˆæ¯é•¿åº¦</param>
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize);
 		int Send(const std::string n_sData);
 
 		void SetRecvBuffSize(const int n_nSize);
 
-		// Êı¾İ½ÓÊÕ»Øµ÷
+		// æ•°æ®æ¥æ”¶å›è°ƒ
 		std::function<void(const std::string& )> fnRecvCallback = nullptr;
 	protected:
 		void MulticastThread() const;
@@ -224,7 +225,7 @@ namespace tinynet
 	};
 #pragma endregion
 
-#pragma region base
+#pragma region Socket åŸºç±»
 	class ITinyNet : public INetImpl, public FNetNode
 	{
 	public:
@@ -232,48 +233,59 @@ namespace tinynet
 		virtual ~ITinyNet();
 
 		/// <summary>
-		/// Æô¶¯Socket
+		/// å¯åŠ¨Socket
 		/// </summary>
 		/// <returns></returns>
 		virtual bool Start();
 		/// <summary>
-		/// ÍË³ö
+		/// é€€å‡º
 		/// </summary>
 		virtual void Stop();
 
 		/// <summary>
-		/// ÆôÓÃĞÄÌø°ü
+		/// å¯ç”¨å¿ƒè·³åŒ…
 		/// </summary>
-		/// <param name="n_nPeriod">ĞÄÌøÖÜÆÚ(ºÁÃë)</param>
-		/// <param name="n_nTimeoutCnt">ĞÄÌøÔÊĞí³¬Ê±´ÎÊı</param>
+		/// <param name="n_nPeriod">å¿ƒè·³å‘¨æœŸ(æ¯«ç§’)</param>
+		/// <param name="n_nTimeoutCnt">å¿ƒè·³å…è®¸è¶…æ—¶æ¬¡æ•°</param>
 		virtual void EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt);
 		
 		int KeepAlive(int n_nAlive = 1) const;
-		// ÉèÖÃ³¬Ê±£¬½¨ÒéÔÚStartÇ°ÉèÖÃ
+		// è®¾ç½®è¶…æ—¶ï¼Œå»ºè®®åœ¨Startå‰è®¾ç½®
 		int SetTimeout(int n_nMilliSeconds);
-		// ÉèÖÃ SO_REUSEADDR 
+		// è®¾ç½® SO_REUSEADDR 
 		int ReuseAddr(int n_nReuse) const;
 
 		void SetRecvBuffSize(const int n_nSize);
 
+		const bool IsRunning() const { return m_bRun; }
+
 		/// <summary>
-		/// ÊÂ¼ş»Øµ÷
+		/// äº‹ä»¶å›è°ƒ
 		/// </summary>
-		/// <param name="FNetNode*">²úÉúÊÂ¼şµÄSocket½Úµã</param>
-		/// <param name="const ENetEvent">ÊÂ¼şÀàĞÍ</param>
-		/// <param name="const std::string&">ÊÂ¼şÏûÏ¢</param>
+		/// <param name="FNetNode*">äº§ç”Ÿäº‹ä»¶çš„SocketèŠ‚ç‚¹</param>
+		/// <param name="const ENetEvent">äº‹ä»¶ç±»å‹</param>
+		/// <param name="const std::string&">äº‹ä»¶æ¶ˆæ¯</param>
 		std::function<void(FNetNode*, const ENetEvent, const std::string&)> fnEventCallback = nullptr;
 
 		/// <summary>
-		/// Êı¾İ½ÓÊÕ»Øµ÷
+		/// æ•°æ®æ¥æ”¶å›è°ƒ
 		/// </summary>
-		/// <param name="FNetNode*">²úÉúÊı¾İµÄSocket½Úµã</param>
-		/// <param name="const std::string&">½ÓÊÕµÄÊı¾İ</param>
+		/// <param name="FNetNode*">äº§ç”Ÿæ•°æ®çš„SocketèŠ‚ç‚¹</param>
+		/// <param name="const std::string&">æ¥æ”¶çš„æ•°æ®</param>
 		std::function<void(FNetNode*, const std::string&)> fnRecvCallback = nullptr;
 
 	protected:
+		// äº‹ä»¶æ¶ˆæ¯
+		virtual bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
+
+		void OnEventCallback(FNetNode* n_pNetNode, 
+			const ENetEvent n_eNetEvent, const std::string& n_sData);
+
+		void OnRecvCallback(FNetNode* n_pNetNode, const std::string& n_sData);
+
+	protected:
 		int			m_nBuffSize = 1024;
-		// Ä¬ÈÏ3Ãë³¬Ê±
+		// é»˜è®¤3ç§’è¶…æ—¶
 		int			m_nTimeout = 3000;
 
 		bool		m_bRun = false;
@@ -281,7 +293,7 @@ namespace tinynet
 #pragma endregion
 
 	////////////////////////////////////////////////////////////////////////////////
-#pragma region server
+#pragma region æœåŠ¡ç«¯
 	class CTinyServer : public ITinyNet
 	{
 	public:
@@ -291,12 +303,8 @@ namespace tinynet
 		bool Start() override;
 		void Stop() override;
 
-		// »ñÈ¡ TCP ¿Í»§¶Ë
-#if defined(_WIN32) || defined(_WIN64)
-		const std::map<FNetNode*, void*>& GetClients();
-#else
-		const std::map<int, FNetNode>& GetClients();
-#endif
+		// è·å– TCP å®¢æˆ·ç«¯
+		const std::list<FNetNode*>& GetClients();
 
 	protected:
 #if defined(_WIN32) || defined(_WIN64)
@@ -305,14 +313,14 @@ namespace tinynet
 		bool CreateWorkerThread();
 		void WorkerThread();
 
-		// Í¶µİ½ÓÊÕ
-		int PostRecv(void* n_Handle);
+		// æŠ•é€’æ¥æ”¶
+		int PostRecv(FNetNode* n_pNetNode);
 
-		// ´´½¨Íê³É¼ü
+		// åˆ›å»ºå®Œæˆé”®
 		void* AllocSocketNode(size_t n_fd, const stSockaddrIn* n_Addr);
-		// ÊÍ·ÅÍê³É¼ü
-		void FreeSocketNode(void** n_Handle);
-		// ÊÍ·ÅËùÓĞÍê³É¼ü
+		// é‡Šæ”¾å®Œæˆé”®
+		void FreeSocketNode(FNetNode** n_pNetNode);
+		// é‡Šæ”¾æ‰€æœ‰å®Œæˆé”®
 		void FreeSocketNodes();
 #else
 		bool InitSock();
@@ -322,27 +330,31 @@ namespace tinynet
 		void SetEt(const bool et = true);
 	protected:
 		int SetNonblock(int n_nFd);
-		int AddSocketIntoPoll(int n_nFd);
+		int AddSocketIntoPoll(FNetNode* n_pNetNode);
 		int DelSocketFromPoll(int n_nFd);
-		void FreeSocketNode(int n_nFd);
+		void FreeSocketNode(FNetNode* n_pNetNode);
 		void FreeSocketNodes();
 #endif
+
+	protected:
+		// äº‹ä»¶æ¶ˆæ¯
+		bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
 
 	protected:
 #if defined(_WIN32) || defined(_WIN64)
 		void*			m_hIocp = nullptr;
 		std::thread*	m_threads = nullptr;
-		std::map<FNetNode*, void*> m_mNodes;
 #else
 		int				m_nEpfd = 0;
 		bool			m_bEt = true;
-		std::map<int, FNetNode> m_mNodes;
 #endif
+		std::mutex		m_mutex;
+		std::list<FNetNode*> m_lstNodes;
 	};
 #pragma endregion
 
 	////////////////////////////////////////////////////////////////////////////////
-#pragma region client
+#pragma region å®¢æˆ·ç«¯
 	class CTinyClient : public ITinyNet
 	{
 	public:
@@ -353,39 +365,40 @@ namespace tinynet
 		void Stop() override;
 
 		/// <summary>
-		/// ÆôÓÃĞÄÌø°ü
+		/// å¯ç”¨å¿ƒè·³åŒ…
 		/// </summary>
-		/// <param name="n_nPeriod">ĞÄÌøÖÜÆÚ(ºÁÃë)</param>
-		/// <param name="n_nTimeoutCnt">ĞÄÌøÔÊĞí³¬Ê±´ÎÊı</param>
-		/// ÖÜÆÚÎª0 ±íÊ¾½ûÓÃ£¬Ä¬ÈÏ½ûÓÃ
+		/// <param name="n_nPeriod">å¿ƒè·³å‘¨æœŸ(æ¯«ç§’)</param>
+		/// <param name="n_nTimeoutCnt">å¿ƒè·³å…è®¸è¶…æ—¶æ¬¡æ•°</param>
+		/// å‘¨æœŸä¸º0 è¡¨ç¤ºç¦ç”¨ï¼Œé»˜è®¤ç¦ç”¨
 		void EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt) override;
 
-		// ÉèÖÃ´Ó·şÎñ¶Ë·µ»ØµÄ sockaddr Êı¾İ
-		void SetRemoteAddr(char* n_szBuff, int n_nSize);
-
-		// »ñÈ¡ÔÚ·şÎñ¶ËµÄÊ¶±ğºÅ
+		// è·å–åœ¨æœåŠ¡ç«¯çš„ç«¯å£å·
 		const unsigned short RemotePort();
 
-		// »ñÈ¡ÔÚ·şÎñ¶ËµÄ IP
+		// è·å–åœ¨æœåŠ¡ç«¯çš„ IP
 		const std::string RemoteIp();
 
 	protected:
 		bool InitSock();
 		void WorkerThread();
-		// ĞÄÌøÏß³Ì
+		// å¿ƒè·³çº¿ç¨‹
 		void HeartThread();
 		void Join();
+
+		// äº‹ä»¶æ¶ˆæ¯
+		bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
+		void QuitEvent();
 
 	protected:
 		std::thread	m_thread;
 
-		// ÔÚ·şÎñ¶ËµÄ IP ºÍ ¶Ë¿ÚºÅĞÅÏ¢
+		// åœ¨æœåŠ¡ç«¯çš„ IP å’Œ ç«¯å£å·ä¿¡æ¯
 		char			m_szRemoteAddr[SOCKADDR_SIZE] = {0};
-		// ĞÄÌøĞòºÅ
+		// å¿ƒè·³åºå·
 		unsigned int	m_nHeartNo = 0;
-		// ĞÄÌøÖÜÆÚ
+		// å¿ƒè·³å‘¨æœŸ
 		unsigned int	m_nHeartPeriod = 0;
-		// ĞÄÌøÔÊĞí³¬Ê±´ÎÊı
+		// å¿ƒè·³å…è®¸è¶…æ—¶æ¬¡æ•°
 		unsigned int 	m_nHeartTimeoutCnt = 0;
 	};
 #pragma endregion
