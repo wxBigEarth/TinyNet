@@ -25,7 +25,7 @@ namespace tinynet
 	constexpr unsigned int kHeartId = (('N' << 16) | ('I' << 8) | ('X'));
 	constexpr unsigned int kQuitId = (('T' << 24) | ('I' << 16) | ('U' << 8) | ('Q'));
 
-	const std::string kNetTypeString[] = 
+	const std::string kNetTypeString[] =
 	{
 		"TCP",
 		"UDP",
@@ -100,8 +100,8 @@ namespace tinynet
 
 		for (auto ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
 		{
-			if (ifa->ifa_addr && 
-				ifa->ifa_addr->sa_family == AF_INET && 
+			if (ifa->ifa_addr &&
+				ifa->ifa_addr->sa_family == AF_INET &&
 				strcmp(ifa->ifa_name, "lo") != 0)
 			{
 				stSockaddrIn* ipAddr = reinterpret_cast<stSockaddrIn*>(ifa->ifa_addr);
@@ -157,7 +157,7 @@ namespace tinynet
 	}
 
 	////////////////////////////////////////////////////////////////////////////////
-	#pragma region 事件消息
+#pragma region 事件消息
 	struct FEventMsg
 	{
 		// 消息Id，系统维护
@@ -212,7 +212,7 @@ namespace tinynet
 		}
 		else if (eNetType == ENetType::UDP)
 		{
-			nResult = sendto(fd, n_szData, n_nSize, 0, 
+			nResult = sendto(fd, n_szData, n_nSize, 0,
 				(stSockaddr*)Addr, sizeof(stSockaddr));
 		}
 
@@ -236,7 +236,7 @@ namespace tinynet
 			(stSockaddr*)&OtherAddr, sizeof(stSockaddr));
 	}
 
-	int FNetNode::Send(const std::string& n_sData, 
+	int FNetNode::Send(const std::string& n_sData,
 		const std::string& n_sHost, const unsigned short n_nPort) const
 	{
 		return Send(n_sData.c_str(), (int)n_sData.size(), n_sHost, n_nPort);
@@ -294,7 +294,7 @@ namespace tinynet
 		Heart.Sender = (unsigned int)fd;
 		Heart.No = n_nNo;
 		Heart.Cnt = n_nFailCnt;
-		
+
 		return Send((const char*)&Heart, sizeof(FHeart));
 	}
 
@@ -412,7 +412,7 @@ namespace tinynet
 
 			stIpMreq IpMreq = { 0 };
 			memcpy(&IpMreq.imr_multiaddr,
-				&toSockaddrIn(m_NetNode.Addr)->sin_addr, 
+				&toSockaddrIn(m_NetNode.Addr)->sin_addr,
 				sizeof(struct in_addr));
 			inet_pton(AF_INET, m_sLocalIp.c_str(), &IpMreq.imr_interface.s_addr);
 
@@ -444,7 +444,7 @@ namespace tinynet
 		{
 			stIpMreq IpMreq = { 0 };
 			memcpy(&IpMreq.imr_multiaddr,
-				&toSockaddrIn(m_NetNode.Addr)->sin_addr, 
+				&toSockaddrIn(m_NetNode.Addr)->sin_addr,
 				sizeof(struct in_addr));
 			inet_pton(AF_INET, m_sLocalIp.c_str(), &IpMreq.imr_interface.s_addr);
 
@@ -547,7 +547,7 @@ namespace tinynet
 			(ValType)&keepAlive,
 			sizeof(keepAlive));
 
-		if (nResult == -1) 
+		if (nResult == -1)
 			DebugError("setsockopt KeepAlive error: %d\n", LastError());
 
 		// ... 设置 TCP_KEEPIDLE, TCP_KEEPINTVL 和 TCP_KEEPCNT
@@ -556,7 +556,7 @@ namespace tinynet
 
 	int ITinyNet::SetTimeout(int n_nMilliSeconds)
 	{
-		if (n_nMilliSeconds > 0) 
+		if (n_nMilliSeconds > 0)
 			m_nTimeout = n_nMilliSeconds;
 		if (!IsValid()) return 0;
 
@@ -617,7 +617,7 @@ namespace tinynet
 			(ValType)&n_nReuse,
 			sizeof(n_nReuse));
 
-		if (nResult == -1) 
+		if (nResult == -1)
 			DebugError("setsockopt SO_REUSEADDR error: %d\n", LastError());
 
 		return nResult;
@@ -633,7 +633,7 @@ namespace tinynet
 		return false;
 	}
 
-	void ITinyNet::OnEventCallback(FNetNode* n_pNetNode, 
+	void ITinyNet::OnEventCallback(FNetNode* n_pNetNode,
 		const ENetEvent n_eNetEvent, const std::string& n_sData)
 	{
 		if (fnEventCallback) fnEventCallback(n_pNetNode, n_eNetEvent, n_sData);
@@ -653,13 +653,13 @@ namespace tinynet
 	{
 		WSAOVERLAPPED	Overlapped = { 0 };
 		WSABUF			DataBuf = { 0 };
-		FNetNode*		NetNode = nullptr;
-		char*			Buffer = nullptr;
+		FNetNode* NetNode = nullptr;
+		char* Buffer = nullptr;
 	};
 
 	struct FIOCPNetNode : public FNetNode
 	{
-		FNetHandle* 	Handle;
+		FNetHandle* Handle;
 	};
 #else
 	static int EPOLL_SIZE = 4096;
@@ -956,7 +956,7 @@ namespace tinynet
 		if (!NetNode) return nullptr;
 
 		NetNode->Handle = (FNetHandle*)malloc(sizeof(FNetHandle));
-		if (!NetNode->Handle) 
+		if (!NetNode->Handle)
 		{
 			free(NetNode);
 			return nullptr;
@@ -1089,7 +1089,7 @@ namespace tinynet
 	void CTinyServer::WorkerThread()
 	{
 		if (m_nEpfd == 0) return;
-		
+
 		int					nResult = 0;
 		struct epoll_event	Event[EPOLL_SIZE];
 
@@ -1168,7 +1168,7 @@ namespace tinynet
 					if (p->eNetType == ENetType::UDP) p = &NetNode;
 
 					auto sData = std::string(szBuff, nResult);
-					if (!OnEventCallback(p, sData))
+					if (!OnEventMessage(p, sData))
 					{
 						OnRecvCallback(p, sData);
 					}
@@ -1230,12 +1230,13 @@ namespace tinynet
 		auto it = m_lstNodes.begin();
 		while (it != m_lstNodes.end())
 		{
-			DelSocketFromPoll(it->first);
-			CloseSocket(it->second.fd);
-			it++;
-		}
+			auto pNetNode = *it;
+			m_lstNodes.erase(it++);
 
-		m_lstNodes.clear();
+			DelSocketFromPoll(pNetNode->fd);
+			CloseSocket(pNetNode->fd);
+			free(pNetNode);
+		}
 	}
 #endif
 
@@ -1248,7 +1249,7 @@ namespace tinynet
 		{
 		case kHelloId:
 		{
-			OnEventCallback(n_pNetNode, ENetEvent::Hello, 
+			OnEventCallback(n_pNetNode, ENetEvent::Hello,
 				std::string(n_pNetNode->Addr, SOCKADDR_SIZE)
 			);
 
@@ -1258,12 +1259,12 @@ namespace tinynet
 			memcpy(szBuff + sizeof(unsigned int), n_pNetNode->Addr, SOCKADDR_SIZE);
 			n_pNetNode->Send(szBuff, nLen);
 		}
-			break;
+		break;
 		case kHeartId:
 		{
 			auto pHeart = (FHeart*)pEventMsg;
 			OnEventCallback(n_pNetNode,
-				ENetEvent::Heart, 
+				ENetEvent::Heart,
 				std::string(n_sData.data() + sizeof(unsigned int) * 2, sizeof(unsigned int) * 2)
 			);
 
@@ -1274,12 +1275,12 @@ namespace tinynet
 				n_pNetNode->Send(n_sData);
 			}
 		}
-			break;
+		break;
 		case kQuitId:
 		{
 			OnEventCallback(n_pNetNode, ENetEvent::Quit, "");
 		}
-			break;
+		break;
 		default:
 			bResult = false;
 			break;
@@ -1291,7 +1292,7 @@ namespace tinynet
 #pragma endregion
 
 
-////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////
 #pragma region 客户端
 	CTinyClient::CTinyClient()
 	{
@@ -1317,7 +1318,7 @@ namespace tinynet
 
 		// 通知服务端退出
 		//Quit();
-		QuitEvent();		
+		QuitEvent();
 		Join();
 	}
 
@@ -1405,7 +1406,7 @@ namespace tinynet
 				nResult = recv(fd, szBuff, m_nBuffSize, 0);
 			else if (eNetType == ENetType::UDP)
 			{
-				nResult = recvfrom(fd, szBuff, m_nBuffSize, 0, 
+				nResult = recvfrom(fd, szBuff, m_nBuffSize, 0,
 					(stSockaddr*)NetNode.Addr, &nLen);
 			}
 
@@ -1421,7 +1422,7 @@ namespace tinynet
 			}
 
 			auto sData = std::string(szBuff, nResult);
- 			if (!OnEventMessage(this, sData))
+			if (!OnEventMessage(this, sData))
 			{
 				if (eNetType == ENetType::TCP) OnRecvCallback(this, sData);
 				else if (eNetType == ENetType::UDP) OnRecvCallback(&NetNode, sData);
@@ -1454,7 +1455,7 @@ namespace tinynet
 			}
 
 			// 未接收到返回心跳，默认连接异常，退出
-			if (m_nHeartNo == nHeartNo) 
+			if (m_nHeartNo == nHeartNo)
 			{
 				if (nFail >= m_nHeartTimeoutCnt) break;
 				else {
@@ -1490,14 +1491,14 @@ namespace tinynet
 		{
 			auto pData = (char*)(n_sData.data() + sizeof(unsigned int));
 			memcpy(m_szRemoteAddr, pData, SOCKADDR_SIZE);
-			
+
 			OnEventCallback(n_pNetNode, ENetEvent::Hello, "");
 		}
-			break;
+		break;
 		case kHeartId:
 		{
 			auto pHeart = (FHeart*)pEventMsg;
-			OnEventCallback(n_pNetNode, ENetEvent::Heart, 
+			OnEventCallback(n_pNetNode, ENetEvent::Heart,
 				std::string(n_sData.data() + sizeof(unsigned int) * 2, sizeof(unsigned int) * 2)
 			);
 
@@ -1507,12 +1508,12 @@ namespace tinynet
 				pHeart->No++;
 				n_pNetNode->Send(n_sData);
 			}
-			else 
+			else
 			{
 				m_nHeartNo = pHeart->No;
 			}
 		}
-			break;
+		break;
 		case kQuitId:
 			QuitEvent();
 			// 工作线程退出后，会触发退出事件，这里无需发送退出事件

@@ -1,4 +1,4 @@
-#ifndef __TINYNET_H__
+﻿#ifndef __TINYNET_H__
 #define __TINYNET_H__
 #include <list>
 #include <string>

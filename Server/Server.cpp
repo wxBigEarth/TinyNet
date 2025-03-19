@@ -79,7 +79,8 @@ int main()
 		pNode->Send(sData);
 	};
 
-	if (rs.Start(TYPE, HOST, PORT))
+	rs.Init(TYPE, HOST, PORT);
+	if (rs.Start())
 	{
 		getchar();
 	}

@@ -29,7 +29,7 @@ void MulticastReceiver()
 
 	mc.fnRecvCallback = [&](const std::string& msg) {
 		std::cout << msg << endl;
-	}
+		};
 }
 
 int main()
