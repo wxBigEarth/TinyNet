@@ -45,10 +45,16 @@ namespace tinynet
 	int LastError();
 
 	// 从 sockaddr 获取端口号
-	inline unsigned short GetPort(char* n_szAddr);
+	inline unsigned short SockaddrToPort(char* n_szAddr);
 
-	// 从 sockaddr 获取IP
-	inline std::string GetIp(char* n_szAddr);
+	// 从 sockaddr 获取 IP
+	inline std::string SockaddrToIp(char* n_szAddr);
+
+	// 从 sockaddr 获取整形 IP
+	inline unsigned long SockaddrToLongIp(char* n_szAddr);
+
+	// sockaddr 转换整形 (IP << 16) | Port
+	inline unsigned long long SockaddrToInteger(char* n_szAddr);
 
 	// 关闭 socket
 	inline void CloseSocket(size_t& n_nSocket);
@@ -73,6 +79,7 @@ namespace tinynet
 		ENetType		eNetType = ENetType::TCP;
 		// Socket
 		size_t			fd = 0;
+		// Sockaddr
 		char			Addr[SOCKADDR_SIZE] = {0};
 		// 用户数据，适用于TCP服务端，指向为客户端分配的数据地址
 		void*			UserData = nullptr;

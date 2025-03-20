@@ -126,13 +126,15 @@ namespace tinynet
 #endif
 	}
 
-	inline unsigned short GetPort(char* n_szAddr)
+	inline unsigned short SockaddrToPort(char* n_szAddr)
 	{
+		if (!n_szAddr) return 0;
 		return ntohs(toSockaddrIn(n_szAddr)->sin_port);
 	}
 
-	inline std::string GetIp(char* n_szAddr)
+	inline std::string SockaddrToIp(char* n_szAddr)
 	{
+		if (!n_szAddr) return "";
 		char sHost[IPADDR_SIZE] = { 0 };
 
 		inet_ntop(AF_INET,
@@ -141,6 +143,19 @@ namespace tinynet
 			IPADDR_SIZE);
 
 		return std::string(sHost);
+	}
+
+	inline unsigned long SockaddrToLongIp(char* n_szAddr)
+	{
+		if (!n_szAddr) return 0;
+		return toSockaddrIn(n_szAddr)->sin_addr.s_addr;
+	}
+
+	inline unsigned long long SockaddrToInteger(char* n_szAddr)
+	{
+		if (!n_szAddr) return 0;
+		unsigned long long nResult = SockaddrToLongIp(n_szAddr);
+		return (nResult << 16) | SockaddrToPort(n_szAddr);
 	}
 
 	inline void CloseSocket(size_t& n_nSocket)
@@ -192,12 +207,12 @@ namespace tinynet
 
 	const unsigned short FNetNode::Port()
 	{
-		return GetPort(Addr);
+		return SockaddrToPort(Addr);
 	}
 
 	const std::string FNetNode::Ip()
 	{
-		return GetIp(Addr);
+		return SockaddrToIp(Addr);
 	}
 
 	int FNetNode::Send(const char* n_szData, const int n_nSize) const
@@ -270,7 +285,7 @@ namespace tinynet
 
 	bool FNetNode::operator==(const FNetNode& n_NetNode)
 	{
-		return memcmp(Addr, n_NetNode.Addr, 0) == 0;
+		return memcmp(Addr, n_NetNode.Addr, 8) == 0;
 	}
 
 	void FNetNode::Clear()
@@ -1331,12 +1346,12 @@ namespace tinynet
 
 	const unsigned short CTinyClient::RemotePort()
 	{
-		return GetPort(m_szRemoteAddr);
+		return SockaddrToPort(m_szRemoteAddr);
 	}
 
 	const std::string CTinyClient::RemoteIp()
 	{
-		return GetIp(m_szRemoteAddr);
+		return SockaddrToIp(m_szRemoteAddr);
 	}
 
 	bool CTinyClient::InitSock()
