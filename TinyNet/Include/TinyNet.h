@@ -66,7 +66,7 @@ namespace tinynet
 #define SOCKADDR_SIZE 16
 #define EVENTMSGDATA_SIZE 16
 
-#pragma region 锟节碉拷
+#pragma region Socket节点
 	struct FNetNode
 	{
 		// 协议
@@ -74,6 +74,8 @@ namespace tinynet
 		// Socket
 		size_t			fd = 0;
 		char			Addr[SOCKADDR_SIZE] = {0};
+		// 用户数据，适用于TCP服务端，指向为客户端分配的数据地址
+		void*			UserData = nullptr;
 
 		void Init(const ENetType n_eType,
 			const std::string& n_sHost, const unsigned short n_nPort);
