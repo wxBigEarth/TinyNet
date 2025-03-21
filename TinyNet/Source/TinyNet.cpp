@@ -1,4 +1,4 @@
-#include "TinyNet.h"
+﻿#include "TinyNet.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <WinSock2.h>
@@ -37,7 +37,7 @@ namespace tinynet
 		return std::thread::hardware_concurrency();
 	}
 
-	inline static int NetType2SockType(const ENetType n_eType)
+	static int NetType2SockType(const ENetType n_eType)
 	{
 		int nType = SOCK_STREAM;
 
@@ -51,7 +51,7 @@ namespace tinynet
 
 	inline static stSockaddrIn* toSockaddrIn(void* n_szAddr) { return (stSockaddrIn*)n_szAddr; }
 
-	inline static void BuildSockAddrIn(void* n_Addr, const std::string& n_sHost, const unsigned short n_nPort)
+	static void BuildSockAddrIn(void* n_Addr, const std::string& n_sHost, const unsigned short n_nPort)
 	{
 		stSockaddrIn* pSockaddrIn = (stSockaddrIn*)n_Addr;
 
@@ -126,13 +126,13 @@ namespace tinynet
 #endif
 	}
 
-	inline unsigned short SockaddrToPort(char* n_szAddr)
+	unsigned short SockaddrToPort(char* n_szAddr)
 	{
 		if (!n_szAddr) return 0;
 		return ntohs(toSockaddrIn(n_szAddr)->sin_port);
 	}
 
-	inline std::string SockaddrToIp(char* n_szAddr)
+	std::string SockaddrToIp(char* n_szAddr)
 	{
 		if (!n_szAddr) return "";
 		char sHost[IPADDR_SIZE] = { 0 };
@@ -145,20 +145,20 @@ namespace tinynet
 		return std::string(sHost);
 	}
 
-	inline unsigned long SockaddrToLongIp(char* n_szAddr)
+	unsigned long SockaddrToLongIp(char* n_szAddr)
 	{
 		if (!n_szAddr) return 0;
 		return toSockaddrIn(n_szAddr)->sin_addr.s_addr;
 	}
 
-	inline unsigned long long SockaddrToInteger(char* n_szAddr)
+	unsigned long long SockaddrToInteger(char* n_szAddr)
 	{
 		if (!n_szAddr) return 0;
 		unsigned long long nResult = SockaddrToLongIp(n_szAddr);
 		return (nResult << 16) | SockaddrToPort(n_szAddr);
 	}
 
-	inline void CloseSocket(size_t& n_nSocket)
+	void CloseSocket(size_t& n_nSocket)
 	{
 		if (n_nSocket > 0)
 		{
@@ -325,7 +325,7 @@ namespace tinynet
 #pragma endregion
 
 	////////////////////////////////////////////////////////////////////////////////
-#pragma region 公共基类
+#pragma region 网络接口
 #if defined(_WIN32) || defined(_WIN64)
 	int INetImpl::m_nRef = 0;
 #endif
@@ -1354,6 +1354,11 @@ namespace tinynet
 		return SockaddrToIp(m_szRemoteAddr);
 	}
 
+	int CTinyClient::SendHeart()
+	{
+		return Heart(m_nHeartNo, 0);
+	}
+
 	bool CTinyClient::InitSock()
 	{
 		int nResult = 0;
@@ -1406,12 +1411,12 @@ namespace tinynet
 
 		SockaddrLen	nLen = sizeof(stSockaddrIn);
 
+		// 通知服务端初始化
+		Hello();
+
 		OnEventCallback(this, ENetEvent::Ready, "");
 		if (m_nHeartPeriod > 0)
 			std::thread(&CTinyClient::HeartThread, this).detach();
-
-		// 通知服务端初始化
-		Hello();
 
 		while (true)
 		{

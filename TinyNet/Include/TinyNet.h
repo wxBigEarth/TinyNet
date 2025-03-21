@@ -45,19 +45,19 @@ namespace tinynet
 	int LastError();
 
 	// 从 sockaddr 获取端口号
-	inline unsigned short SockaddrToPort(char* n_szAddr);
+	unsigned short SockaddrToPort(char* n_szAddr);
 
 	// 从 sockaddr 获取 IP
-	inline std::string SockaddrToIp(char* n_szAddr);
+	std::string SockaddrToIp(char* n_szAddr);
 
 	// 从 sockaddr 获取整形 IP
-	inline unsigned long SockaddrToLongIp(char* n_szAddr);
+	unsigned long SockaddrToLongIp(char* n_szAddr);
 
 	// sockaddr 转换整形 (IP << 16) | Port
-	inline unsigned long long SockaddrToInteger(char* n_szAddr);
+	unsigned long long SockaddrToInteger(char* n_szAddr);
 
 	// 关闭 socket
-	inline void CloseSocket(size_t& n_nSocket);
+	void CloseSocket(size_t& n_nSocket);
 
 #if defined(_WIN32) || defined(_WIN64)
 #define SockaddrLen int
@@ -72,7 +72,7 @@ namespace tinynet
 #define SOCKADDR_SIZE 16
 #define EVENTMSGDATA_SIZE 16
 
-#pragma region Socket节点
+#pragma region 网络节点
 	struct FNetNode
 	{
 		// 协议
@@ -147,7 +147,7 @@ namespace tinynet
 	};
 #pragma endregion
 
-#pragma region 共通基类
+#pragma region 网络接口
 	class INetImpl
 	{
 	public:
@@ -386,6 +386,9 @@ namespace tinynet
 
 		// 获取在服务端的 IP
 		const std::string RemoteIp();
+
+		// 手动发送心跳包
+		int SendHeart();
 
 	protected:
 		bool InitSock();
