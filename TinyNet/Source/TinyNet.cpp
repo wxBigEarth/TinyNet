@@ -27,6 +27,7 @@ namespace tinynet
 
 	const std::string kNetTypeString[] =
 	{
+		"None",
 		"TCP",
 		"UDP",
 		"MULTICAST",
@@ -39,7 +40,7 @@ namespace tinynet
 
 	static int NetType2SockType(const ENetType n_eType)
 	{
-		int nType = SOCK_STREAM;
+		int nType = 0;
 
 		if (n_eType == ENetType::TCP)
 			nType = SOCK_STREAM;
@@ -755,20 +756,12 @@ namespace tinynet
 #if defined(_WIN32) || defined(_WIN64)
 	bool CTinyServer::InitSock()
 	{
-		int nResult = 0;
-
 		int nSockType = NetType2SockType(eNetType);
+		if (nSockType == 0) return false;
 
 		do
 		{
 			m_bRun = false;
-
-			m_hIocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-			if (!m_hIocp)
-			{
-				DebugError("创建完成端口失败\n");
-				break;
-			}
 
 			fd = WSASocketW(AF_INET, nSockType, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			if (fd == SOCKET_ERROR)
@@ -777,11 +770,7 @@ namespace tinynet
 				break;
 			}
 
-			KeepAlive(1);
-			SetTimeout(-1);
-			ReuseAddr(1);
-
-			nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
+			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
 				DebugError("绑定 Socket 失败\n");
@@ -798,7 +787,18 @@ namespace tinynet
 				}
 			}
 
+			KeepAlive(1);
+			SetTimeout(-1);
+			ReuseAddr(1);
+
 			if (!CreateWorkerThread()) break;
+
+			m_hIocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+			if (!m_hIocp)
+			{
+				DebugError("创建完成端口失败\n");
+				break;
+			}
 
 			if (eNetType == ENetType::TCP)
 			{
@@ -1040,9 +1040,8 @@ namespace tinynet
 
 	bool CTinyServer::InitSock()
 	{
-		int nResult = 0;
-
 		int nSockType = NetType2SockType(eNetType);
+		if (nSockType == 0) return false;
 
 		do
 		{
@@ -1053,6 +1052,23 @@ namespace tinynet
 			{
 				DebugError("create Socket error: %d\n", LastError());
 				break;
+			}
+
+			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
+			if (nResult == -1)
+			{
+				DebugError("bind Socket error: %d\n", LastError());
+				break;
+			}
+
+			if (eNetType == ENetType::TCP)
+			{
+				nResult = listen(fd, SOMAXCONN);
+				if (nResult == -1)
+				{
+					DebugError("listen Socket error: %d\n", LastError());
+					break;
+				}
 			}
 
 			KeepAlive(1);
@@ -1072,23 +1088,6 @@ namespace tinynet
 			{
 				DebugError("Add EPoll eventl error: %d\n", LastError());
 				break;
-			}
-
-			nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
-			if (nResult == -1)
-			{
-				DebugError("bind Socket error: %d\n", LastError());
-				break;
-			}
-
-			if (eNetType == ENetType::TCP)
-			{
-				nResult = listen(fd, SOMAXCONN);
-				if (nResult == -1)
-				{
-					DebugError("listen Socket error: %d\n", LastError());
-					break;
-				}
 			}
 
 			std::thread(&CTinyServer::WorkerThread, this).detach();
@@ -1364,9 +1363,8 @@ namespace tinynet
 
 	bool CTinyClient::InitSock()
 	{
-		int nResult = 0;
-
 		int nSockType = NetType2SockType(eNetType);
+		if (nSockType == 0) return false;
 
 		do
 		{
@@ -1379,16 +1377,16 @@ namespace tinynet
 				break;
 			}
 
-			KeepAlive(1);
-			//SetTimeout(-1);
-			ReuseAddr(1);
-
-			nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
+			auto nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
 				DebugError("connect Socket error: %d\n", LastError());
 				break;
 			}
+
+			KeepAlive(1);
+			//SetTimeout(-1);
+			ReuseAddr(1);
 
 			Join();
 			m_thread = std::thread(&CTinyClient::WorkerThread, this);

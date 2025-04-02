@@ -17,7 +17,8 @@ namespace tinynet
 {
 	enum class ENetType
 	{
-		TCP = 0,
+		None = 0,
+		TCP,
 		UDP,
 		// 组播接收者
 		UDP_MULTICAST,
