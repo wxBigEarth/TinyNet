@@ -22,7 +22,7 @@
 namespace tinynet
 {
 	constexpr unsigned int kHelloId = (('0' << 24) | ('L' << 16) | ('E' << 8) | ('H'));
-	constexpr unsigned int kHeartId = (('N' << 16) | ('I' << 8) | ('X'));
+	constexpr unsigned int kHeartId = (('R' << 24) | ('A' << 16) | ('E' << 8) | ('H'));
 	constexpr unsigned int kQuitId = (('T' << 24) | ('I' << 16) | ('U' << 8) | ('Q'));
 
 	const std::string kNetTypeString[] =
@@ -60,13 +60,13 @@ namespace tinynet
 		inet_pton(AF_INET, n_sHost.data(), &toSockaddrIn(n_Addr)->sin_addr.s_addr);
 	}
 
+#if defined(_WIN32) || defined(_WIN64)
 	const std::string GetLocalIPAddress()
 	{
 		std::string sResult;
 		int nResult = 0;
 		char ipstr[32] = { 0 };
 
-#if defined(_WIN32) || defined(_WIN64)
 		char hostname[256] = { 0 };
 
 		gethostname(hostname, sizeof(hostname));
@@ -86,14 +86,23 @@ namespace tinynet
 
 			if (ptr->ai_family == AF_INET)
 			{
-				inet_ntop(AF_INET, &(ipv4->sin_addr), ipstr, 32);
+				inet_ntop(AF_INET, &(ipv4->sin_addr), ipstr, sizeof(ipstr));
 				sResult = ipstr;
 				break;
 			}
 		}
 
 		freeaddrinfo(res);
+
+		return sResult;
+	}
 #else
+	const std::string GetLocalIPAddress()
+	{
+		std::string sResult;
+		int nResult = 0;
+		char ipstr[32] = { 0 };
+		
 		struct ifaddrs* ifaddr = nullptr;
 		nResult = getifaddrs(&ifaddr);
 		if (nResult != 0) return sResult;
@@ -105,17 +114,17 @@ namespace tinynet
 				strcmp(ifa->ifa_name, "lo") != 0)
 			{
 				stSockaddrIn* ipAddr = reinterpret_cast<stSockaddrIn*>(ifa->ifa_addr);
-				inet_ntop(AF_INET, &(ipAddr->sin_addr), ipstr, 32);
+				inet_ntop(AF_INET, &(ipAddr->sin_addr), ipstr, sizeof(ipstr));
 				sResult = ipstr;
 				break;
 			}
 		}
 
 		freeifaddrs(ifaddr);
-#endif
 
 		return sResult;
 	}
+#endif
 
 	int LastError()
 	{
@@ -195,7 +204,7 @@ namespace tinynet
 		const std::string& n_sHost, const unsigned short n_nPort)
 	{
 		eNetType = n_eType;
-
+		memset(Addr, 0, sizeof(stSockaddrIn));
 		BuildSockAddrIn(&Addr, n_sHost, n_nPort);
 	}
 
@@ -203,6 +212,7 @@ namespace tinynet
 	{
 		eNetType = n_eType;
 		if (n_Addr) memcpy(Addr, n_Addr, sizeof(stSockaddrIn));
+		else memset(Addr, 0, sizeof(stSockaddrIn));
 	}
 
 	const unsigned short FNetNode::Port()
@@ -268,17 +278,13 @@ namespace tinynet
 
 #if defined(_WIN32) || defined(_WIN64)
 		int nLen = sprintf_s(szBuff, sizeof(szBuff), "%s %s:%d ",
-			kNetTypeString[(int)eNetType].data(),
-			Ip().data(),
-			Port()
-		);
 #else
 		int nLen = sprintf(szBuff, "%s %s:%d ",
+#endif
 			kNetTypeString[(int)eNetType].data(),
 			Ip().data(),
 			Port()
 		);
-#endif
 
 		return std::string(szBuff, nLen);
 	}
@@ -791,12 +797,6 @@ namespace tinynet
 					break;
 				}
 			}
-			else if (eNetType == ENetType::UDP)
-			{
-				CreateIoCompletionPort(
-					(HANDLE)fd, m_hIocp, (ULONG_PTR)fd, 0
-				);
-			}
 
 			if (!CreateWorkerThread()) break;
 
@@ -807,6 +807,9 @@ namespace tinynet
 			else if (eNetType == ENetType::UDP)
 			{
 				auto UdpHandle = (FIOCPNetNode*)AllocSocketNode(fd, nullptr);
+				CreateIoCompletionPort(
+					(HANDLE)fd, m_hIocp, (ULONG_PTR)UdpHandle, 0
+				);
 				PostRecv(UdpHandle);
 			}
 
@@ -878,8 +881,8 @@ namespace tinynet
 		int		nResult = 0;
 		DWORD	nRecvBytes = 0;
 
-		FNetHandle* pCompletionKey = nullptr;
-		FNetHandle* pSocketInfo = nullptr;
+		FIOCPNetNode* 	pCompletionKey = nullptr;
+		FNetHandle* 	pSocketInfo = nullptr;
 
 		while (true)
 		{
@@ -890,8 +893,7 @@ namespace tinynet
 				INFINITE
 			);
 
-			if (!pCompletionKey || !pSocketInfo)
-				break;
+			if (!pCompletionKey || !pSocketInfo) break;
 
 			pSocketInfo->DataBuf.len = nRecvBytes;
 
@@ -925,7 +927,7 @@ namespace tinynet
 
 	int CTinyServer::PostRecv(FNetNode* n_pNetNode)
 	{
-		int		nResult = 0;
+		int	nResult = 0;
 		if (!n_pNetNode) return nResult;
 
 		auto pNetNode = (FIOCPNetNode*)n_pNetNode;
@@ -981,6 +983,7 @@ namespace tinynet
 
 		NetNode->fd = n_fd;
 		NetNode->Init(eNetType, n_Addr);
+		NetNode->UserData = nullptr;
 		memset(&(NetNode->Handle->Overlapped), 0, sizeof(OVERLAPPED));
 
 		// 分配接收数据缓存
