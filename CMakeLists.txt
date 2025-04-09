@@ -20,6 +20,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/lib/Release)
 if (MSVC)
 	# 忽略C26812警告
 	add_compile_options(/wd26812)
+	add_compile_options(/wd26451)
 endif()
 
 # 包含子项目。

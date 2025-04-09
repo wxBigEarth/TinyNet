@@ -77,13 +77,15 @@ namespace tinynet
 	struct FNetNode
 	{
 		// 协议
-		ENetType		eNetType = ENetType::TCP;
+		ENetType		eNetType = ENetType::None;
 		// Socket
 		size_t			fd = 0;
 		// Sockaddr
 		char			Addr[SOCKADDR_SIZE] = {0};
 		// 用户数据，适用于TCP服务端，指向为客户端分配的数据地址
 		void*			UserData = nullptr;
+		// 用于解决TCP粘包, 最大缓存长度为 kMaxTCPBufferSize 默认64M，超出长度则认为异常，舍弃
+		std::string 	sCache;
 
 		void Init(const ENetType n_eType,
 			const std::string& n_sHost, const unsigned short n_nPort);
@@ -148,12 +150,40 @@ namespace tinynet
 	};
 #pragma endregion
 
-#pragma region 网络接口
-	class INetImpl
+#pragma region 回调接口
+	class ITinyCallback
 	{
 	public:
-		INetImpl();
-		virtual ~INetImpl();
+		/// <summary>
+		/// 事件回调
+		/// </summary>
+		/// <param name="FNetNode*">产生事件的Socket节点</param>
+		/// <param name="const ENetEvent">事件类型</param>
+		/// <param name="const std::string&">事件消息</param>
+		virtual void OnEventCallback(FNetNode* n_pNetNode, 
+			const ENetEvent n_eNetEvent, const std::string& n_sData);
+	
+		/// <summary>
+		/// 数据接收回调
+		/// </summary>
+		/// <param name="FNetNode*">产生数据的Socket节点, 对于组播，该参数为nullptr</param>
+		/// <param name="const char*">接收的数据</param>
+		/// <param name="int">接收的长度</param>
+		virtual bool OnReceiveCallback(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
+	};
+#pragma endregion
+
+#pragma region 网络接口
+	class ITinyImpl
+	{
+	public:
+		ITinyImpl();
+		virtual ~ITinyImpl();
+
+		void SetRecvBuffSize(const int n_nSize);
+
+		// 设置接收事件及消息回调
+		void SetTinyCallback(ITinyCallback* n_TinyCallback);
 
 	protected:
 		void Startup();
@@ -163,11 +193,14 @@ namespace tinynet
 #if defined(_WIN32) || defined(_WIN64)
 		static int m_nRef;
 #endif
+		int				m_nBuffSize = 1024;
+		// 回调接口
+		ITinyCallback*	m_TinyCallback = nullptr;
 	};
 #pragma endregion
 
 #pragma region 组播
-	class CMulticast : public INetImpl
+	class CMulticast : public ITinyImpl
 	{
 	public:
 		CMulticast();
@@ -220,15 +253,12 @@ namespace tinynet
 		int Send(const char* n_szData, const int n_nSize);
 		int Send(const std::string n_sData);
 
-		void SetRecvBuffSize(const int n_nSize);
-
 		// 数据接收回调
-		std::function<void(const std::string& )> fnRecvCallback = nullptr;
+		std::function<void(const char*, int)> fnRecvCallback = nullptr;
 	protected:
 		void MulticastThread() const;
 
 	protected:
-		int			m_nBuffSize = 1024;
 		FNetNode	m_NetNode;
 
 		std::string m_sLocalIp;
@@ -236,7 +266,7 @@ namespace tinynet
 #pragma endregion
 
 #pragma region Socket 基类
-	class ITinyNet : public INetImpl, public FNetNode
+	class ITinyNet : public ITinyImpl, public FNetNode
 	{
 	public:
 		ITinyNet();
@@ -265,8 +295,6 @@ namespace tinynet
 		// 设置 SO_REUSEADDR 
 		int ReuseAddr(int n_nReuse) const;
 
-		void SetRecvBuffSize(const int n_nSize);
-
 		const bool IsRunning() const { return m_bRun; }
 
 		/// <summary>
@@ -275,23 +303,42 @@ namespace tinynet
 		/// <param name="FNetNode*">产生事件的Socket节点</param>
 		/// <param name="const ENetEvent">事件类型</param>
 		/// <param name="const std::string&">事件消息</param>
-		std::function<void(FNetNode*, const ENetEvent, const std::string&)> fnEventCallback = nullptr;
+		std::function<void(FNetNode*, const ENetEvent, const std::string& )> fnEventCallback = nullptr;
 
 		/// <summary>
 		/// 数据接收回调
 		/// </summary>
 		/// <param name="FNetNode*">产生数据的Socket节点</param>
-		/// <param name="const std::string&">接收的数据</param>
-		std::function<void(FNetNode*, const std::string&)> fnRecvCallback = nullptr;
+		/// <param name="const char*">接收的数据</param>
+		/// <param name="int">接收的长度</param>
+		std::function<void(FNetNode*, const char*, int)> fnRecvCallback = nullptr;
 
 	protected:
 		// 事件消息
-		virtual bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
+		virtual bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
+
+		/// <summary>
+		/// 接收到 TCP 数据
+		/// </summary>
+		/// <param name="FNetNode*">产生数据的Socket节点</param>
+		/// <param name="std::string&">未处理完的数据（不是完整数据包）</param>
+		/// <param name="const char*">接收的数据</param>
+		/// <param name="int">接收的长度</param>
+		void ReceiveTcpMessage(FNetNode* n_pNetNode, 
+			std::string& n_sLast, const char* n_szData, int n_nSize);
+
+		/// <summary>
+		/// 接收到 UDP 数据
+		/// </summary>
+		/// <param name="FNetNode*">产生数据的Socket节点</param>
+		/// <param name="const char*">接收的数据</param>
+		/// <param name="int">接收的长度</param>
+		void ReceiveUdpMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
 
 		void OnEventCallback(FNetNode* n_pNetNode, 
 			const ENetEvent n_eNetEvent, const std::string& n_sData);
 
-		void OnRecvCallback(FNetNode* n_pNetNode, const std::string& n_sData);
+		void OnRecvCallback(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
 
 	protected:
 		int			m_nBuffSize = 1024;
@@ -342,13 +389,13 @@ namespace tinynet
 		int SetNonblock(int n_nFd);
 		int AddSocketIntoPoll(FNetNode* n_pNetNode);
 		int DelSocketFromPoll(int n_nFd);
-		void FreeSocketNode(FNetNode* n_pNetNode);
+		void FreeSocketNode(FNetNode** n_pNetNode);
 		void FreeSocketNodes();
 #endif
 
 	protected:
 		// 事件消息
-		bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
+		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize) override;
 
 	protected:
 #if defined(_WIN32) || defined(_WIN64)
@@ -399,7 +446,8 @@ namespace tinynet
 		void Join();
 
 		// 事件消息
-		bool OnEventMessage(FNetNode* n_pNetNode, const std::string& n_sData);
+		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize) override;
+
 		void QuitEvent();
 
 	protected:

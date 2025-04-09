@@ -72,11 +72,11 @@ int main()
 		}
 	};
 
-	rs.fnRecvCallback = [&](FNetNode* pNode, const std::string& sData) {
+	rs.fnRecvCallback = [&](FNetNode* pNode, const char* sData, int nLen) {
 
-		cout << "Recv [" << sData.length() << "]: " << sData << endl;
+		cout << "Recv [" << nLen << "]: " << std::string(sData, nLen) << endl;
 
-		pNode->Send(sData);
+		pNode->Send(sData, nLen);
 	};
 
 	rs.Init(TYPE, HOST, PORT);

@@ -27,7 +27,7 @@ void MulticastReceiver()
 	mc.Init(MULTICAST, PORT);
 	mc.Receiver();
 
-	mc.fnRecvCallback = [&](const std::string& msg) {
+	mc.fnRecvCallback = [&](const char* msg, int len) {
 		std::cout << msg << endl;
 		};
 }
@@ -61,9 +61,9 @@ int main()
 		}
 	};
 
-	rc.fnRecvCallback = [&](FNetNode* pNode, const std::string& sData) {
+	rc.fnRecvCallback = [&](FNetNode* pNode, const char* sData, int nLen) {
 
-		cout << "Recv [" << sData.length() << "]: " << sData << endl;
+		cout << "Recv [" << nLen << "]: " << std::string(sData, nLen) << endl;
 	};
 	//rc.SetRecvBuffSize(8192);
 
