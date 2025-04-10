@@ -428,6 +428,22 @@ namespace tinynet
 		return m_NetNode.IsValid();
 	}
 
+	int CMulticast::SetTTL(unsigned char n_nTTL)
+	{
+		if (!m_NetNode.IsValid()) return 0;
+		
+		int nResult = setsockopt(m_NetNode.fd, 
+			IPPROTO_IP, 
+			IP_MULTICAST_TTL, 
+			(ValType)&n_nTTL, 
+			sizeof(n_nTTL));
+
+		if (nResult == -1)
+			DebugError("setsockopt IP_TTL error: %d\n", LastError());
+
+		return nResult;
+	}
+
 	int CMulticast::Sender()
 	{
 		if (!m_NetNode.IsValid()) return -1;
@@ -536,13 +552,13 @@ namespace tinynet
 
 		while (true)
 		{
+			memset(szBuff, 0, m_nBuffSize);
 			nResult = recvfrom(m_NetNode.fd,
 				szBuff, m_nBuffSize, 0, (stSockaddr*)&Addr, &nLen);
 			if (nResult <= 0) break;
 
 			if (fnRecvCallback) fnRecvCallback(szBuff, nResult);
 			if (m_TinyCallback) m_TinyCallback->OnReceiveCallback(nullptr, szBuff, nResult);
-			memset(szBuff, 0, m_nBuffSize);
 		}
 
 		memset(szBuff, 0, m_nBuffSize);
@@ -573,7 +589,18 @@ namespace tinynet
 	{
 	}
 
-	int ITinyNet::KeepAlive(int n_nAlive) const
+	void ITinyNet::SetTimeout(int n_nMilliSeconds)
+	{
+		m_nTimeout = n_nMilliSeconds;
+	}
+
+	void ITinyNet::SetTTL(int n_nTTL)
+	{
+		if (n_nTTL > 255) return;
+		m_nTTL = n_nTTL;
+	}
+
+	int ITinyNet::KeepAlive(const size_t n_nFd) const
 	{
 		if (!IsValid()) return 0;
 		if (eNetType != ENetType::TCP) return 0;
@@ -584,7 +611,7 @@ namespace tinynet
 		//int keepCount = 3; // 探测次数
 
 		int nResult = setsockopt(
-			fd,
+			n_nFd,
 			SOL_SOCKET,
 			SO_KEEPALIVE,
 			(ValType)&keepAlive,
@@ -594,58 +621,6 @@ namespace tinynet
 			DebugError("setsockopt KeepAlive error: %d\n", LastError());
 
 		// ... 设置 TCP_KEEPIDLE, TCP_KEEPINTVL 和 TCP_KEEPCNT
-		return nResult;
-	}
-
-	int ITinyNet::SetTimeout(int n_nMilliSeconds)
-	{
-		if (n_nMilliSeconds > 0)
-			m_nTimeout = n_nMilliSeconds;
-		if (!IsValid()) return 0;
-
-		int nResult = 0;
-
-		do
-		{
-#if defined(_WIN32) || defined(_WIN64)
-			int tv = m_nTimeout;
-#else
-			struct timeval tv;
-
-			// Set timeout for sending and receiving
-			tv.tv_sec = m_nTimeout / 1000;  // Timeout in seconds
-			tv.tv_usec = 0;					// Timeout in microseconds
-#endif
-			// 设置接收超时
-			nResult = setsockopt(
-				fd,
-				SOL_SOCKET,
-				SO_RCVTIMEO,
-				(ValType)&tv,
-				sizeof(tv));
-
-			if (nResult == -1)
-			{
-				DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
-				break;
-			}
-
-			// 设置发送超时
-			nResult = setsockopt(
-				fd,
-				SOL_SOCKET,
-				SO_SNDTIMEO,
-				(ValType)&tv,
-				sizeof(tv));
-
-			if (nResult == -1)
-			{
-				DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
-				break;
-			}
-
-		} while (false);
-
 		return nResult;
 	}
 
@@ -662,6 +637,79 @@ namespace tinynet
 
 		if (nResult == -1)
 			DebugError("setsockopt SO_REUSEADDR error: %d\n", LastError());
+
+		return nResult;
+	}
+
+	int ITinyNet::ApplySendTimeout()
+	{
+		int nResult = 0;
+		if (!IsValid() || m_nTimeout < 0) return nResult;
+
+#if defined(_WIN32) || defined(_WIN64)
+		int tv = m_nTimeout;
+#else
+		struct timeval tv;
+
+		// Set timeout for sending and receiving
+		tv.tv_sec = m_nTimeout / 1000;  // Timeout in seconds
+		tv.tv_usec = 0;					// Timeout in microseconds
+#endif
+		// 设置接收超时
+		nResult = setsockopt(
+			fd,
+			SOL_SOCKET,
+			SO_SNDTIMEO,
+			(ValType)&tv,
+			sizeof(tv));
+
+		if (nResult == -1)
+			DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
+		
+		return nResult;
+	}
+
+	int ITinyNet::ApplyRecvTimeout()
+	{
+		int nResult = 0;
+		if (!IsValid() || m_nTimeout < 0) return nResult;
+
+#if defined(_WIN32) || defined(_WIN64)
+		int tv = m_nTimeout;
+#else
+		struct timeval tv;
+
+		// Set timeout for sending and receiving
+		tv.tv_sec = m_nTimeout / 1000;  // Timeout in seconds
+		tv.tv_usec = 0;					// Timeout in microseconds
+#endif
+
+		// 设置发送超时
+		nResult = setsockopt(
+			fd,
+			SOL_SOCKET,
+			SO_RCVTIMEO,
+			(ValType)&tv,
+			sizeof(tv));
+
+		if (nResult == -1)
+			DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
+
+		return nResult;
+	}
+
+	int ITinyNet::ApplyTTL()
+	{
+		if (!IsValid() || m_nTTL < 0 || m_nTTL > 255) return 0;
+		
+		int nResult = setsockopt(fd, 
+			IPPROTO_IP, 
+			IP_TTL, 
+			(ValType)&m_nTTL, 
+			sizeof(int));
+
+		if (nResult == -1)
+			DebugError("setsockopt IP_TTL error: %d\n", LastError());
 
 		return nResult;
 	}
@@ -873,6 +921,11 @@ namespace tinynet
 				break;
 			}
 
+			ApplyTTL();
+			ApplySendTimeout();
+			ApplyRecvTimeout();
+			ReuseAddr(1);
+
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
@@ -889,10 +942,6 @@ namespace tinynet
 					break;
 				}
 			}
-
-			KeepAlive(1);
-			SetTimeout(-1);
-			ReuseAddr(1);
 
 			if (!CreateWorkerThread()) break;
 
@@ -948,7 +997,9 @@ namespace tinynet
 			}
 
 			auto TcpHandle = (FIOCPNetNode*)AllocSocketNode(ClientSocket, &ClientAddr);
+			if (!TcpHandle) continue;
 
+			KeepAlive(ClientSocket);
 			OnEventCallback(TcpHandle, ENetEvent::Accept, "");
 
 			CreateIoCompletionPort(
@@ -1155,6 +1206,11 @@ namespace tinynet
 				break;
 			}
 
+			ApplyTTL();
+			ApplySendTimeout();
+			ApplyRecvTimeout();
+			ReuseAddr(1);
+
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == -1)
 			{
@@ -1171,10 +1227,6 @@ namespace tinynet
 					break;
 				}
 			}
-
-			KeepAlive(1);
-			SetTimeout(-1);
-			ReuseAddr(1);
 
 			m_nEpfd = epoll_create(1);
 			if (m_nEpfd == -1)
@@ -1247,6 +1299,8 @@ namespace tinynet
 
 					auto RemoteNetNode = new FNetNode;
 					if (!RemoteNetNode) continue;
+					KeepAlive(nFd);
+
 					RemoteNetNode->fd = nFd;
 					RemoteNetNode->Init(ENetType::TCP, &RemoteAddr);
 
@@ -1474,6 +1528,9 @@ namespace tinynet
 				break;
 			}
 
+			ApplyTTL();
+			ApplySendTimeout();
+			
 			auto nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
@@ -1481,9 +1538,7 @@ namespace tinynet
 				break;
 			}
 
-			KeepAlive(1);
-			//SetTimeout(-1);
-			ReuseAddr(1);
+			KeepAlive(fd);
 
 			Join();
 			m_thread = std::thread(&CTinyClient::WorkerThread, this);
@@ -1491,6 +1546,8 @@ namespace tinynet
 			m_bRun = true;
 
 		} while (false);
+
+		if (!m_bRun) CloseSocket(fd);
 
 		return m_bRun;
 	}

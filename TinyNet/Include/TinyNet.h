@@ -226,6 +226,9 @@ namespace tinynet
 		*/
 		bool Init(const std::string& n_sHost, const unsigned short n_nPort);
 
+		// 设置TTL
+		int SetTTL(unsigned char n_nTTL);
+
 		/// <summary>
 		/// 启动组播(发送端)
 		/// </summary>
@@ -289,11 +292,10 @@ namespace tinynet
 		/// <param name="n_nTimeoutCnt">心跳允许超时次数</param>
 		virtual void EnableHeart(unsigned int n_nPeriod, unsigned int n_nTimeoutCnt);
 		
-		int KeepAlive(int n_nAlive = 1) const;
-		// 设置超时，建议在Start前设置
-		int SetTimeout(int n_nMilliSeconds);
-		// 设置 SO_REUSEADDR 
-		int ReuseAddr(int n_nReuse) const;
+		// 设置超时，在Start前设置
+		void SetTimeout(int n_nMilliSeconds);
+		// 设置TTL，在Start前设置
+		void SetTTL(int n_nTTL);
 
 		const bool IsRunning() const { return m_bRun; }
 
@@ -314,6 +316,16 @@ namespace tinynet
 		std::function<void(FNetNode*, const char*, int)> fnRecvCallback = nullptr;
 
 	protected:
+		// 设置 SO_KEEPALIVE 
+		int KeepAlive(const size_t n_nFd) const;
+		// 设置 SO_REUSEADDR 
+		int ReuseAddr(int n_nReuse) const;
+		// 应用超时
+		int ApplySendTimeout();
+		int ApplyRecvTimeout();
+		// 应用TTL
+		int ApplyTTL();
+
 		// 事件消息
 		virtual bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
 
@@ -344,6 +356,8 @@ namespace tinynet
 		int			m_nBuffSize = 1024;
 		// 默认3秒超时
 		int			m_nTimeout = 3000;
+		// TTL
+		int			m_nTTL = -1;
 
 		bool		m_bRun = false;
 	};
