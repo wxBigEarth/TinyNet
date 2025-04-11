@@ -353,7 +353,6 @@ namespace tinynet
 		void OnRecvCallback(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
 
 	protected:
-		int			m_nBuffSize = 1024;
 		// 默认3秒超时
 		int			m_nTimeout = 3000;
 		// TTL
