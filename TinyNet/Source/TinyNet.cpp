@@ -185,6 +185,136 @@ namespace tinynet
 	}
 
 	////////////////////////////////////////////////////////////////////////////////
+	// 设置广播
+	static int SetSocketBroadcast(const size_t n_nFd, bool n_bEnable = true)
+	{
+		auto ret = setsockopt(n_nFd, 
+			SOL_SOCKET, SO_BROADCAST, 
+			(ValType)&n_bEnable, sizeof(bool));
+		
+		if (ret == -1) 
+			DebugError("setsockopt IP_TTL error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置Time-To-Live
+	static int SetSocketTTL(const size_t n_nFd, int n_nTTL)
+	{
+		if (n_nTTL < 0 || n_nTTL > 255) return -1;
+		auto ret = setsockopt(n_nFd, 
+			IPPROTO_IP, IP_MULTICAST_TTL, 
+			(ValType)&n_nTTL, sizeof(int));
+
+		if (ret == -1)
+			DebugError("setsockopt IP_TTL error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置加入组播
+	static int SetSocketAddMemberShip(const size_t n_nFd, ValType n_IpMreq)
+	{
+		auto ret = setsockopt(n_nFd,
+			IPPROTO_IP, IP_ADD_MEMBERSHIP,
+			n_IpMreq, sizeof(stIpMreq));
+
+		if (ret == -1)
+			DebugError("setsockopt IP_ADD_MEMBERSHIP error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置移除组播
+	static int SetSocketDropMemberShip(const size_t n_nFd, ValType n_IpMreq)
+	{
+		auto ret = setsockopt(n_nFd,
+			IPPROTO_IP, IP_DROP_MEMBERSHIP,
+			n_IpMreq, sizeof(stIpMreq));
+
+		if (ret == -1)
+			DebugError("setsockopt IP_DROP_MEMBERSHIP error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置KeepAlive
+	static int SetSocketKeepAlive(const size_t n_nFd, int n_nKeeyAlive = 1) 
+	{
+		//int keepAlive = 1;
+		//int keepIdle = 60; // 空闲时间
+		//int keepInterval = 5; // 探测间隔
+		//int keepCount = 3; // 探测次数
+
+		auto ret = setsockopt(n_nFd,
+			SOL_SOCKET, SO_KEEPALIVE,
+			(ValType)&n_nKeeyAlive, sizeof(int));
+
+		if (ret == -1)
+			DebugError("setsockopt KeepAlive error: %d\n", LastError());
+		// ... 设置 TCP_KEEPIDLE, TCP_KEEPINTVL 和 TCP_KEEPCNT
+		return ret;
+	}
+
+	// 设置Socket重用
+	static int SetSocketReuseAddr(const size_t n_nFd, int n_nReuse = 1)
+	{
+		auto ret = setsockopt(n_nFd,
+			SOL_SOCKET, SO_REUSEADDR,
+			(ValType)&n_nReuse, sizeof(int));
+
+		if (ret == -1)
+			DebugError("setsockopt SO_REUSEADDR error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置发送超时
+	int SetSocketSendTimeout(const size_t n_nFd, const int n_nMilliSeconds)
+	{
+		if (n_nMilliSeconds < 0) return -1;
+
+#if defined(_WIN32) || defined(_WIN64)
+		int tv = n_nMilliSeconds;
+#else
+		struct timeval tv;
+
+		// Set timeout for sending and receiving
+		tv.tv_sec = n_nMilliSeconds / 1000;	// Timeout in seconds
+		tv.tv_usec = 0;						// Timeout in microseconds
+#endif
+		// 设置发送超时
+		auto ret = setsockopt(n_nFd,
+			SOL_SOCKET,SO_SNDTIMEO,
+			(ValType)&tv, sizeof(tv));
+
+		if (ret == -1)
+			DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
+		return ret;
+	}
+
+	// 设置接收超时
+	int SetSocketRecvTimeout(const size_t n_nFd, const int n_nMilliSeconds)
+	{
+		if (n_nMilliSeconds < 0) return -1;
+
+#if defined(_WIN32) || defined(_WIN64)
+		int tv = n_nMilliSeconds;
+#else
+		struct timeval tv;
+
+		// Set timeout for sending and receiving
+		tv.tv_sec = n_nMilliSeconds / 1000; // Timeout in seconds
+		tv.tv_usec = 0;						// Timeout in microseconds
+#endif
+		// 设置接收超时
+		auto ret = setsockopt(n_nFd,
+			SOL_SOCKET, SO_RCVTIMEO,
+			(ValType)&tv, sizeof(tv));
+
+		if (ret == -1)
+			DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
+		return ret;
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
+
+	////////////////////////////////////////////////////////////////////////////////
 #pragma region 事件消息
 	struct FEventMsg
 	{
@@ -430,18 +560,14 @@ namespace tinynet
 
 	int CMulticast::SetTTL(unsigned char n_nTTL)
 	{
-		if (!m_NetNode.IsValid()) return 0;
-		
-		int nResult = setsockopt(m_NetNode.fd, 
-			IPPROTO_IP, 
-			IP_MULTICAST_TTL, 
-			(ValType)&n_nTTL, 
-			sizeof(n_nTTL));
+		if (!m_NetNode.IsValid()) return -1;
+		return SetSocketTTL(m_NetNode.fd, n_nTTL);
+	}
 
-		if (nResult == -1)
-			DebugError("setsockopt IP_TTL error: %d\n", LastError());
-
-		return nResult;
+	int CMulticast::SetBroadcast(bool n_bEnable)
+	{
+		if (!m_NetNode.IsValid()) return -1;
+		return SetSocketBroadcast(m_NetNode.fd, n_bEnable);
 	}
 
 	int CMulticast::Sender()
@@ -479,18 +605,8 @@ namespace tinynet
 				sizeof(struct in_addr));
 			inet_pton(AF_INET, m_sLocalIp.c_str(), &IpMreq.imr_interface.s_addr);
 
-			nResult = setsockopt(
-				m_NetNode.fd,
-				IPPROTO_IP,
-				IP_ADD_MEMBERSHIP,
-				(ValType)&IpMreq,
-				sizeof(stIpMreq));
-
-			if (nResult < 0)
-			{
-				DebugError("setsockopt IP_ADD_MEMBERSHIP error: %d\n", LastError());
+			if (SetSocketAddMemberShip(m_NetNode.fd, (ValType)&IpMreq) < 0)
 				break;
-			}
 
 			std::thread(&CMulticast::MulticastThread, this).detach();
 
@@ -511,15 +627,7 @@ namespace tinynet
 				sizeof(struct in_addr));
 			inet_pton(AF_INET, m_sLocalIp.c_str(), &IpMreq.imr_interface.s_addr);
 
-			auto nResult = setsockopt(
-				m_NetNode.fd,
-				IPPROTO_IP,
-				IP_DROP_MEMBERSHIP,
-				(ValType)&IpMreq,
-				sizeof(stIpMreq));
-
-			if (nResult < 0)
-				DebugError("setsockopt IP_DROP_MEMBERSHIP error: %d\n", LastError());
+			SetSocketDropMemberShip(m_NetNode.fd, (ValType)&IpMreq);
 		}
 
 		CloseSocket(m_NetNode.fd);
@@ -602,116 +710,9 @@ namespace tinynet
 
 	int ITinyNet::KeepAlive(const size_t n_nFd) const
 	{
-		if (!IsValid()) return 0;
+		if (!IsValid()) return -1;
 		if (eNetType != ENetType::TCP) return 0;
-
-		int keepAlive = 1;
-		//int keepIdle = 60; // 空闲时间
-		//int keepInterval = 5; // 探测间隔
-		//int keepCount = 3; // 探测次数
-
-		int nResult = setsockopt(
-			n_nFd,
-			SOL_SOCKET,
-			SO_KEEPALIVE,
-			(ValType)&keepAlive,
-			sizeof(keepAlive));
-
-		if (nResult == -1)
-			DebugError("setsockopt KeepAlive error: %d\n", LastError());
-
-		// ... 设置 TCP_KEEPIDLE, TCP_KEEPINTVL 和 TCP_KEEPCNT
-		return nResult;
-	}
-
-	int ITinyNet::ReuseAddr(int n_nReuse) const
-	{
-		if (!IsValid()) return 0;
-
-		int nResult = setsockopt(
-			fd,
-			SOL_SOCKET,
-			SO_REUSEADDR,
-			(ValType)&n_nReuse,
-			sizeof(n_nReuse));
-
-		if (nResult == -1)
-			DebugError("setsockopt SO_REUSEADDR error: %d\n", LastError());
-
-		return nResult;
-	}
-
-	int ITinyNet::ApplySendTimeout()
-	{
-		int nResult = 0;
-		if (!IsValid() || m_nTimeout < 0) return nResult;
-
-#if defined(_WIN32) || defined(_WIN64)
-		int tv = m_nTimeout;
-#else
-		struct timeval tv;
-
-		// Set timeout for sending and receiving
-		tv.tv_sec = m_nTimeout / 1000;  // Timeout in seconds
-		tv.tv_usec = 0;					// Timeout in microseconds
-#endif
-		// 设置接收超时
-		nResult = setsockopt(
-			fd,
-			SOL_SOCKET,
-			SO_SNDTIMEO,
-			(ValType)&tv,
-			sizeof(tv));
-
-		if (nResult == -1)
-			DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
-		
-		return nResult;
-	}
-
-	int ITinyNet::ApplyRecvTimeout()
-	{
-		int nResult = 0;
-		if (!IsValid() || m_nTimeout < 0) return nResult;
-
-#if defined(_WIN32) || defined(_WIN64)
-		int tv = m_nTimeout;
-#else
-		struct timeval tv;
-
-		// Set timeout for sending and receiving
-		tv.tv_sec = m_nTimeout / 1000;  // Timeout in seconds
-		tv.tv_usec = 0;					// Timeout in microseconds
-#endif
-
-		// 设置发送超时
-		nResult = setsockopt(
-			fd,
-			SOL_SOCKET,
-			SO_RCVTIMEO,
-			(ValType)&tv,
-			sizeof(tv));
-
-		if (nResult == -1)
-			DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
-
-		return nResult;
-	}
-
-	int ITinyNet::ApplyTTL()
-	{
-		if (!IsValid() || m_nTTL < 0 || m_nTTL > 255) return 0;
-		
-		int nResult = setsockopt(fd, 
-			IPPROTO_IP, 
-			IP_TTL, 
-			(ValType)&m_nTTL, 
-			sizeof(int));
-
-		if (nResult == -1)
-			DebugError("setsockopt IP_TTL error: %d\n", LastError());
-
-		return nResult;
+		return SetSocketKeepAlive(n_nFd, 1);
 	}
 
 	bool ITinyNet::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize)
@@ -921,10 +922,10 @@ namespace tinynet
 				break;
 			}
 
-			ApplyTTL();
-			ApplySendTimeout();
-			ApplyRecvTimeout();
-			ReuseAddr(1);
+			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketSendTimeout(fd, m_nTimeout);
+			SetSocketRecvTimeout(fd, m_nTimeout);
+			SetSocketReuseAddr(fd, 1);
 
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
@@ -1206,10 +1207,10 @@ namespace tinynet
 				break;
 			}
 
-			ApplyTTL();
-			ApplySendTimeout();
-			ApplyRecvTimeout();
-			ReuseAddr(1);
+			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketSendTimeout(fd, m_nTimeout)
+			SetSocketRecvTimeout(fd, m_nTimeout);
+			SetSocketReuseAddr(fd, 1);
 
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == -1)
@@ -1528,8 +1529,8 @@ namespace tinynet
 				break;
 			}
 
-			ApplyTTL();
-			ApplySendTimeout();
+			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketSendTimeout(fd, m_nTimeout);
 			
 			auto nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)

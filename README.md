@@ -1,6 +1,6 @@
 # TinyNet
 
-轻量级跨平台 C++ Socket，支持TCP, UDP及UDP 组播。
+轻量级跨平台 C++ Socket，支持TCP, UDP及UDP 广播、组播。
 
 Windows 服务端使用 IOCP 模型，Linux 服务端使用 EPoll 模型。
 

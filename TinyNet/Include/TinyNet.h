@@ -60,6 +60,11 @@ namespace tinynet
 	// 关闭 socket
 	void CloseSocket(size_t& n_nSocket);
 
+	// 设置发送超时
+	static int SetSocketSendTimeout(const size_t n_nFd, const int n_nMilliSeconds);
+	// 设置接收超时
+	static int SetSocketRecvTimeout(const size_t n_nFd, const int n_nMilliSeconds);
+
 #if defined(_WIN32) || defined(_WIN64)
 #define SockaddrLen int
 #define ValType const char*
@@ -228,6 +233,8 @@ namespace tinynet
 
 		// 设置TTL
 		int SetTTL(unsigned char n_nTTL);
+		// 设置广播
+		int SetBroadcast(bool n_bEnable);
 
 		/// <summary>
 		/// 启动组播(发送端)
@@ -318,13 +325,6 @@ namespace tinynet
 	protected:
 		// 设置 SO_KEEPALIVE 
 		int KeepAlive(const size_t n_nFd) const;
-		// 设置 SO_REUSEADDR 
-		int ReuseAddr(int n_nReuse) const;
-		// 应用超时
-		int ApplySendTimeout();
-		int ApplyRecvTimeout();
-		// 应用TTL
-		int ApplyTTL();
 
 		// 事件消息
 		virtual bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
