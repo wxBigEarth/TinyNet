@@ -36,16 +36,12 @@ Socket 结点封装在结构体 FNetNode，可通过该对象发送数据。
 若接收到的数据不足消息头记录的长度，则在内部缓存（最大支持64M，超出则丢弃），否则通过 
 fnRecvCallback 回调返回给用户
 
-内部事件，用户发送的消息，切记头4字节不与事件Id冲突
-
+内部事件
 客户端初始化成功时，自动给服务端发送 kHelloId 消息，服务端返回远端 sockaddr，触发 ENetEvent::Hello 事件
-constexpr unsigned int kHelloId = (('0' << 24) | ('L' << 16) | ('E' << 8) | ('H'));
 
 客户端启用心跳机制时，发送 kHeartId 消息，触发 ENetEvent::Heart 事件
-constexpr unsigned int kHeartId = (('R' << 24) | ('A' << 16) | ('E' << 8) | ('H'));
 
 若是UDP通信，客户端退出时，发送 kQuitId 消息，触发 ENetEvent::Quit 事件
-constexpr unsigned int kQuitId = (('T' << 16) | ('I' << 24) | ('U' << 8) | ('Q'));
 
 CMulticast 封装组播功能，服务端和客户端可用该类定义发送端和接收端；但不可同时创建发送端和接收端。
 CMulticast 同样通过定义 fnRecvCallback 回调函数接收数据。

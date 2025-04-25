@@ -78,6 +78,59 @@ namespace tinynet
 #define SOCKADDR_SIZE 16
 #define EVENTMSGDATA_SIZE 16
 
+#pragma region 数据缓存
+	struct FNetBuffer
+	{
+	public:
+		FNetBuffer() = default;
+		FNetBuffer(const FNetBuffer& other);
+		FNetBuffer(FNetBuffer&& other) noexcept;
+		FNetBuffer(const char* n_szData, const size_t n_nSize);
+		FNetBuffer(const std::string& n_sData);
+		~FNetBuffer();
+
+		// 分配内存
+		void Alloc(const size_t n_nSize);
+		// 释放内存
+		void Free();
+		// 清空数据
+		void Zero();
+
+		// 数据实际长度(去除数据头)
+		const size_t DataSize() const;
+		// 数据缓存容量(去除数据头)
+		const size_t DataCapacity() const;
+
+		// 设置事件Id(内部使用)
+		void SetEventId(unsigned int n_nEventId);
+		// 获取事件Id(内部使用)
+		const unsigned int GetEventId() const;
+
+		// 获取单次通讯数据长度(含数据头)
+		const unsigned int GetDataPacketSize();
+
+		// 填充数据
+		void SetData(const char* n_szData, const size_t n_nSize);
+		void SetData(const std::string& n_sData);
+		// 获取数据，不含FHeader
+		const char* GetData();
+
+		// 指向现有缓存地址
+		bool PointTo(const char* n_szData, const size_t n_nSize);
+		bool PointTo(const std::string& n_sData);
+
+		FNetBuffer& operator=(const FNetBuffer& other);
+		FNetBuffer& operator=(const std::string& n_sData);
+
+		// 数据，格式: FHeader+数据
+		char* Buffer = nullptr;
+		// 数据长度
+		size_t nLength = 0;
+		// 数据容量
+		size_t nCapacity = 0;
+	};
+#pragma endregion
+
 #pragma region 网络节点
 	struct FNetNode
 	{
@@ -111,6 +164,7 @@ namespace tinynet
 		/// <returns></returns>
 		int Send(const char* n_szData, const int n_nSize) const;
 		int Send(const std::string& n_sData) const;
+		int Send(const FNetBuffer& n_Buffer) const;
 
 		/// <summary>
 		/// 发送UDP消息给服务端外的用户
@@ -123,6 +177,8 @@ namespace tinynet
 		int Send(const char* n_szData, const int n_nSize,
 			const std::string& n_sHost, const unsigned short n_nPort) const;
 		int Send(const std::string& n_sData,
+			const std::string& n_sHost, const unsigned short n_nPort) const;
+		int Send(const FNetBuffer& n_Buffer,
 			const std::string& n_sHost, const unsigned short n_nPort) const;
 
 		const bool IsValid() const;
@@ -327,7 +383,7 @@ namespace tinynet
 		int KeepAlive(const size_t n_nFd) const;
 
 		// 事件消息
-		virtual bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
+		virtual bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize);
 
 		/// <summary>
 		/// 接收到 TCP 数据
@@ -335,22 +391,22 @@ namespace tinynet
 		/// <param name="FNetNode*">产生数据的Socket节点</param>
 		/// <param name="std::string&">未处理完的数据（不是完整数据包）</param>
 		/// <param name="const char*">接收的数据</param>
-		/// <param name="int">接收的长度</param>
+		/// <param name="const int">接收的长度</param>
 		void ReceiveTcpMessage(FNetNode* n_pNetNode, 
-			std::string& n_sLast, const char* n_szData, int n_nSize);
+			std::string& n_sLast, const char* n_szData, const int n_nSize);
 
 		/// <summary>
 		/// 接收到 UDP 数据
 		/// </summary>
 		/// <param name="FNetNode*">产生数据的Socket节点</param>
 		/// <param name="const char*">接收的数据</param>
-		/// <param name="int">接收的长度</param>
-		void ReceiveUdpMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
+		/// <param name="const int">接收的长度</param>
+		void ReceiveUdpMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize);
 
 		void OnEventCallback(FNetNode* n_pNetNode, 
 			const ENetEvent n_eNetEvent, const std::string& n_sData);
 
-		void OnRecvCallback(FNetNode* n_pNetNode, const char* n_szData, int n_nSize);
+		void OnRecvCallback(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize);
 
 	protected:
 		// 默认3秒超时
@@ -408,7 +464,7 @@ namespace tinynet
 
 	protected:
 		// 事件消息
-		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize) override;
+		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize) override;
 
 	protected:
 #if defined(_WIN32) || defined(_WIN64)
@@ -459,7 +515,7 @@ namespace tinynet
 		void Join();
 
 		// 事件消息
-		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize) override;
+		bool OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize) override;
 
 		void QuitEvent();
 

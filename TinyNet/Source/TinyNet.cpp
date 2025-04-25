@@ -26,7 +26,7 @@ namespace tinynet
 	constexpr int kMaxTCPBufferSize = 1024 * 1024 * 64;
 	constexpr unsigned int kHelloId = (('0' << 24) | ('L' << 16) | ('E' << 8) | ('H'));
 	constexpr unsigned int kHeartId = (('R' << 24) | ('A' << 16) | ('E' << 8) | ('H'));
-	constexpr unsigned int kQuitId = (('T' << 16) | ('I' << 24) | ('U' << 8) | ('Q'));
+	constexpr unsigned int kQuitId = (('T' << 24) | ('I' << 16) | ('U' << 8) | ('Q'));
 
 	const std::string kNetTypeString[] =
 	{
@@ -198,11 +198,11 @@ namespace tinynet
 	}
 
 	// 设置Time-To-Live
-	static int SetSocketTTL(const size_t n_nFd, int n_nTTL)
+	static int SetSocketTTL(const size_t n_nFd, int n_nOpt, int n_nTTL)
 	{
 		if (n_nTTL < 0 || n_nTTL > 255) return -1;
 		auto ret = setsockopt(n_nFd, 
-			IPPROTO_IP, IP_MULTICAST_TTL, 
+			IPPROTO_IP, n_nOpt, 
 			(ValType)&n_nTTL, sizeof(int));
 
 		if (ret == -1)
@@ -264,8 +264,7 @@ namespace tinynet
 		return ret;
 	}
 
-	// 设置发送超时
-	int SetSocketSendTimeout(const size_t n_nFd, const int n_nMilliSeconds)
+	static int SetSocketTimeout(const size_t n_nFd, int n_nType, const int n_nMilliSeconds)
 	{
 		if (n_nMilliSeconds < 0) return -1;
 
@@ -280,48 +279,197 @@ namespace tinynet
 #endif
 		// 设置发送超时
 		auto ret = setsockopt(n_nFd,
-			SOL_SOCKET,SO_SNDTIMEO,
+			SOL_SOCKET,n_nType,
 			(ValType)&tv, sizeof(tv));
 
 		if (ret == -1)
-			DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
+		{
+			if (n_nType == SO_SNDTIMEO)
+				DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
+			else
+				DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
+		}
 		return ret;
+	}
+
+	// 设置发送超时
+	int SetSocketSendTimeout(const size_t n_nFd, const int n_nMilliSeconds)
+	{
+		return SetSocketTimeout(n_nFd, SO_SNDTIMEO, n_nMilliSeconds);
 	}
 
 	// 设置接收超时
 	int SetSocketRecvTimeout(const size_t n_nFd, const int n_nMilliSeconds)
 	{
-		if (n_nMilliSeconds < 0) return -1;
-
-#if defined(_WIN32) || defined(_WIN64)
-		int tv = n_nMilliSeconds;
-#else
-		struct timeval tv;
-
-		// Set timeout for sending and receiving
-		tv.tv_sec = n_nMilliSeconds / 1000; // Timeout in seconds
-		tv.tv_usec = 0;						// Timeout in microseconds
-#endif
-		// 设置接收超时
-		auto ret = setsockopt(n_nFd,
-			SOL_SOCKET, SO_RCVTIMEO,
-			(ValType)&tv, sizeof(tv));
-
-		if (ret == -1)
-			DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
-		return ret;
+		return SetSocketTimeout(n_nFd, SO_RCVTIMEO, n_nMilliSeconds);
 	}
 
 	////////////////////////////////////////////////////////////////////////////////
+#pragma region 数据缓存
+	struct FHeader
+	{
+		// 数据包总长度(含数据头)
+		unsigned int nLength = 0;
+		// 事件Id
+		unsigned int nEventId = 0;
+	};
 
+	FNetBuffer::FNetBuffer(const FNetBuffer& other)
+	{
+		*this = other;
+	}
+
+	FNetBuffer::FNetBuffer(FNetBuffer&& other) noexcept
+	{
+		*this = std::move(other);
+	}
+
+	FNetBuffer::FNetBuffer(const char* n_szData, const size_t n_nSize)
+	{
+		SetData(n_szData, n_nSize);
+	}
+
+	FNetBuffer::FNetBuffer(const std::string& n_sData)
+	{
+		SetData(n_sData);
+	}
+
+	FNetBuffer::~FNetBuffer()
+	{
+		Free();
+	};
+
+	void FNetBuffer::Alloc(const size_t n_nSize)
+	{
+		auto nSize = n_nSize + sizeof(FHeader);
+		if (nSize > nCapacity || !Buffer)
+		{
+			Free();
+
+			Buffer = (char*)malloc(nSize);
+			if (Buffer)
+			{
+				nLength = nSize;
+				nCapacity = nLength;
+			}
+		}
+		else nLength = nSize;
+
+		if (Buffer)
+		{
+			auto Header = (FHeader*)Buffer;
+			// 将长度转换为网络字节序（大端）
+			Header->nLength = (unsigned int)htonl((unsigned long)nLength);
+			Header->nEventId = 0;
+		}
+
+		Zero();
+	};
+
+	void FNetBuffer::Free()
+	{
+		if (nCapacity > 0 && Buffer) free(Buffer);
+		
+		Buffer = nullptr;
+		nLength = 0;
+		nCapacity = 0;
+	};
+
+	void FNetBuffer::Zero()
+	{
+		if (!Buffer) return;
+
+		auto nSize = DataCapacity();
+		if (nSize > 0) memset((char*)GetData(), 0, nSize);
+	}
+
+	const size_t FNetBuffer::DataSize() const
+	{
+		if (nLength < sizeof(FHeader)) return 0;
+		return nLength - sizeof(FHeader);
+	}
+
+	const size_t FNetBuffer::DataCapacity() const
+	{
+		if (nCapacity < sizeof(FHeader)) return 0;
+		return nCapacity - sizeof(FHeader);
+	}
+
+	void FNetBuffer::SetEventId(unsigned int n_nEventId)
+	{
+		if (!Buffer) return;
+		auto Header = (FHeader*)Buffer;
+		Header->nEventId = n_nEventId;
+	}
+
+	const unsigned int FNetBuffer::GetEventId() const
+	{
+		if (!Buffer) return 0;
+		auto Header = (FHeader*)Buffer;
+		return Header->nEventId;
+	}
+
+	const unsigned int FNetBuffer::GetDataPacketSize()
+	{
+		if (!Buffer) return 0;
+		auto Header = (FHeader*)Buffer;
+		return ntohl(Header->nLength);
+	}
+
+	void FNetBuffer::SetData(const char* n_szData, const size_t n_nSize)
+	{
+		if (!n_szData || n_nSize == 0) return;
+
+		Alloc(n_nSize);
+		memcpy((char*)GetData(), n_szData, n_nSize);
+	}
+
+	void FNetBuffer::SetData(const std::string& n_sData)
+	{
+		SetData(n_sData.data(), n_sData.size());
+	}
+
+	const char* FNetBuffer::GetData()
+	{
+		if (!Buffer) return nullptr;
+		return Buffer + sizeof(FHeader);
+	}
+
+	bool FNetBuffer::PointTo(const char* n_szData, const size_t n_nSize)
+	{
+		if (!n_szData || n_nSize < sizeof(FHeader)) return false;
+
+		Free();
+		Buffer = (char*)n_szData;
+		nLength = n_nSize;
+
+		return true;
+	}
+
+	bool FNetBuffer::PointTo(const std::string& n_sData)
+	{
+		return PointTo(n_sData.data(), n_sData.size());
+	}
+
+	FNetBuffer& FNetBuffer::operator=(const FNetBuffer& other)
+	{
+		if (!other.Buffer || !other.nLength) return *this;
+
+		Alloc(other.DataSize());
+		memcpy(Buffer, other.Buffer, other.nLength);
+
+		return *this;
+	}
+
+	FNetBuffer& FNetBuffer::operator=(const std::string& n_sData)
+	{
+		SetData(n_sData);
+		return *this;
+	}
+#pragma endregion
 	////////////////////////////////////////////////////////////////////////////////
 #pragma region 事件消息
-	struct FEventMsg
-	{
-		// 消息Id，系统维护
-		unsigned int Id = 0;
-	};
-	struct FHeart : public FEventMsg
+	struct FHeart
 	{
 		// 发送者，系统维护
 		unsigned int Sender = 0;
@@ -367,19 +515,8 @@ namespace tinynet
 
 		if (eNetType == ENetType::TCP)
 		{
-			// 将长度转换为网络字节序（大端）
-			int nSize = htonl(n_nSize);
-
-			// 创建发送缓冲区：4 字节长度头 + 消息体
-			std::vector<char> vBuffer(sizeof(int) + n_nSize);
-		
-			// 将长度头写入缓冲区
-			memcpy(vBuffer.data(), &nSize, sizeof(int));
-		
-			// 将消息体写入缓冲区
-			memcpy(vBuffer.data() + sizeof(int), n_szData, n_nSize);
-			 
-			nResult = send(fd, vBuffer.data(), (int)vBuffer.size(), 0);
+			FNetBuffer NetBuffer(n_szData, n_nSize);			 
+			nResult = send(fd, NetBuffer.Buffer, (int)NetBuffer.nLength, 0);
 		}
 		else if (eNetType == ENetType::UDP)
 		{
@@ -393,6 +530,26 @@ namespace tinynet
 	int FNetNode::Send(const std::string& n_sData) const
 	{
 		return Send(n_sData.c_str(), (int)n_sData.size());
+	}
+
+	int FNetNode::Send(const FNetBuffer& n_Buffer) const
+	{
+		int nResult = 0;
+
+		if (!IsValid() || !n_Buffer.Buffer || !n_Buffer.nLength)
+			return nResult;
+
+		if (eNetType == ENetType::TCP)
+		{
+			nResult = send(fd, n_Buffer.Buffer, (int)n_Buffer.nLength, 0);
+		}
+		else if (eNetType == ENetType::UDP)
+		{
+			nResult = sendto(fd, n_Buffer.Buffer, (int)n_Buffer.nLength, 0,
+				(stSockaddr*)Addr, sizeof(stSockaddr));
+		}
+
+		return nResult;
 	}
 
 	int FNetNode::Send(const char* n_szData, const int n_nSize,
@@ -411,6 +568,13 @@ namespace tinynet
 		const std::string& n_sHost, const unsigned short n_nPort) const
 	{
 		return Send(n_sData.c_str(), (int)n_sData.size(), n_sHost, n_nPort);
+	}
+
+	int FNetNode::Send(const FNetBuffer& n_Buffer,
+		const std::string& n_sHost, const unsigned short n_nPort) const
+	{
+		if (!n_Buffer.Buffer || !n_Buffer.nLength) return 0;
+		return Send(n_Buffer.Buffer, (int)n_Buffer.nLength, n_sHost, n_nPort);
 	}
 
 	const bool FNetNode::IsValid() const
@@ -448,31 +612,36 @@ namespace tinynet
 
 	int FNetNode::Hello()
 	{
-		FEventMsg EventMsg;
-		EventMsg.Id = kHelloId;
+		FNetBuffer NetBuffer;
+		NetBuffer.Alloc(0);
+		NetBuffer.SetEventId(kHelloId);
 
-		return Send((const char*)&EventMsg, sizeof(EventMsg));
+		return Send(NetBuffer);
 	}
 
 	int FNetNode::Heart(unsigned int n_nNo, unsigned int n_nFailCnt)
 	{
-		FHeart Heart;
-		Heart.Id = kHeartId;
+		FHeart Heart = { 0 };
 		Heart.Sender = (unsigned int)fd;
-		Heart.No = n_nNo;
-		Heart.Cnt = n_nFailCnt;
+		Heart.No = htonl(n_nNo);
+		Heart.Cnt = htonl(n_nFailCnt);
 
-		return Send((const char*)&Heart, sizeof(FHeart));
+		FNetBuffer NetBuffer;
+		NetBuffer.SetData((const char*)&Heart, sizeof(FHeart));
+		NetBuffer.SetEventId(kHeartId);
+
+		return Send(NetBuffer);
 	}
 
 	int FNetNode::Quit()
 	{
 		if (eNetType != ENetType::UDP) return 0;
 		// TCP 不用通知
-		FEventMsg EventMsg;
-		EventMsg.Id = kQuitId;
+		FNetBuffer NetBuffer;
+		NetBuffer.Alloc(0);
+		NetBuffer.SetEventId(kQuitId);
 
-		return Send((const char*)&EventMsg, sizeof(EventMsg));
+		return Send(NetBuffer);
 	}
 #pragma endregion
 
@@ -561,7 +730,7 @@ namespace tinynet
 	int CMulticast::SetTTL(unsigned char n_nTTL)
 	{
 		if (!m_NetNode.IsValid()) return -1;
-		return SetSocketTTL(m_NetNode.fd, n_nTTL);
+		return SetSocketTTL(m_NetNode.fd, IP_MULTICAST_TTL, n_nTTL);
 	}
 
 	int CMulticast::SetBroadcast(bool n_bEnable)
@@ -715,88 +884,88 @@ namespace tinynet
 		return SetSocketKeepAlive(n_nFd, 1);
 	}
 
-	bool ITinyNet::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize)
+	bool ITinyNet::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize)
 	{
 		return false;
 	}
 
 	void ITinyNet::ReceiveTcpMessage(FNetNode* n_pNetNode, 
-		std::string& n_sLast, const char* n_szData, int n_nSize)
+		std::string& n_sLast, const char* n_szData, const int n_nSize)
 	{
 		if (eNetType != ENetType::TCP) return;
+		if (n_nSize == 0) return;
 
-		// 长度头占字节数
-		auto nPrefixSize = (int)sizeof(int);
-
+		FNetBuffer NetBuffer;
 		if (!n_sLast.empty())
 		{
-			if (n_sLast.size() < nPrefixSize) return;
-			
-			auto nSize = *(int*)n_sLast.data();
-			// 将长度头转换为主机字节序
-			nSize = ntohl(nSize);
-
-			if (nSize <= 0 || nSize > kMaxTCPBufferSize)
+			if (!NetBuffer.PointTo(n_sLast)) 
 			{
-				// 长度头异常，丢弃
-				std::string().swap(n_sLast);
-				ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData, n_nSize);
+				n_sLast.append(n_szData, 1);
+				ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData + 1, n_nSize - 1);
 				return;
 			}
 
-			// 完整数据包仍需长度
-			auto nLack = nSize + nPrefixSize - (int)n_sLast.size();
-			if (nLack > n_nSize)
+			// 数据包原长度
+			auto nSize = NetBuffer.GetDataPacketSize();
+			if (nSize > kMaxTCPBufferSize)
+			{
+				// 长度头异常，丢弃
+				std::string().swap(n_sLast);
+				//ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData, n_nSize);
+				return;
+			}
+			else if (nSize > NetBuffer.nLength + n_nSize)
 			{
 				// 加上新的数据仍不足一个完整数据包
 				n_sLast.append(n_szData, n_nSize);
 				return;
 			}
 
+			// 完整数据包仍需长度
+			auto nLack = nSize - NetBuffer.nLength;
 			// 补足完整数据包
 			n_sLast.append(n_szData, nLack);
-
-			if (!OnEventMessage(n_pNetNode, n_sLast.data() + nPrefixSize, nSize))
+			
+			if (!OnEventMessage(n_pNetNode, n_sLast.data(), (int)nSize))
 			{
-				OnRecvCallback(n_pNetNode, n_sLast.data() + nPrefixSize, nSize);
+				// 更新Buffer长度
+				NetBuffer.PointTo(n_sLast);
+				OnRecvCallback(n_pNetNode, NetBuffer.GetData(), (int)NetBuffer.DataSize());
 			}
 
 			n_sLast.clear();
 
 			// 处理剩余数据
-			ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData + nLack, n_nSize - nLack);
+			ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData + nLack, n_nSize - (int)nLack);
 		}
 		else
 		{
-			if (n_nSize < nPrefixSize) return;
+			if (!NetBuffer.PointTo(n_szData, n_nSize))
+			{
+				n_sLast.append(n_szData, n_nSize);
+				return;
+			}
 
-			auto nSize = *(int*)n_szData;
-			// 将长度头转换为主机字节序
-			nSize = ntohl(nSize);
-
-			// 长度头异常，丢弃
-			if (nSize <= 0) return;
-
-			// 完整数据包还需长度
-			auto nLack = nSize - n_nSize + nPrefixSize;
-			if (nLack > 0)
+			// 数据包原长度
+			auto nSize = NetBuffer.GetDataPacketSize();
+			if (nSize < NetBuffer.nLength)
 			{
 				// 数据不足一个完整数据包
 				n_sLast.append(n_szData, n_nSize);
 				return;
 			}
 
-			if (!OnEventMessage(n_pNetNode, n_szData + nPrefixSize, nSize))
+			if (!OnEventMessage(n_pNetNode, n_szData, nSize))
 			{
-				OnRecvCallback(n_pNetNode, n_szData + nPrefixSize, nSize);
+				OnRecvCallback(n_pNetNode, NetBuffer.GetData(), (int)NetBuffer.DataSize());
 			}
 
 			// 处理剩余数据 此时 nLack <= 0
-			ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData + nSize + nPrefixSize, -nLack);
+			ReceiveTcpMessage(n_pNetNode, n_sLast, n_szData + nSize, n_nSize - nSize);
 		}
 	}
 
-	void ITinyNet::ReceiveUdpMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize)
+	void ITinyNet::ReceiveUdpMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize)
 	{
 		if (eNetType != ENetType::UDP) return;
 		if (!OnEventMessage(n_pNetNode, n_szData, n_nSize))
@@ -922,7 +1091,7 @@ namespace tinynet
 				break;
 			}
 
-			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketTTL(fd, IP_TTL, (unsigned char)m_nTTL);
 			SetSocketSendTimeout(fd, m_nTimeout);
 			SetSocketRecvTimeout(fd, m_nTimeout);
 			SetSocketReuseAddr(fd, 1);
@@ -1207,7 +1376,7 @@ namespace tinynet
 				break;
 			}
 
-			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketTTL(fd, IP_TTL, (unsigned char)m_nTTL);
 			SetSocketSendTimeout(fd, m_nTimeout)
 			SetSocketRecvTimeout(fd, m_nTimeout);
 			SetSocketReuseAddr(fd, 1);
@@ -1410,12 +1579,15 @@ namespace tinynet
 	}
 #endif
 
-	bool CTinyServer::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize)
+	bool CTinyServer::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize)
 	{
 		bool bResult = true;
 
-		auto pEventMsg = (FEventMsg*)n_szData;
-		switch (pEventMsg->Id)
+		FNetBuffer NetBuffer;
+		if (!NetBuffer.PointTo(n_szData, n_nSize)) return false;
+		auto nEventId = NetBuffer.GetEventId();
+
+		switch (nEventId)
 		{
 		case kHelloId:
 		{
@@ -1424,26 +1596,32 @@ namespace tinynet
 			);
 
 			// 返回客户端对应的远端 sockaddr
-			const size_t nLen = sizeof(unsigned int) + SOCKADDR_SIZE;
-			char szBuff[nLen] = { 0 };
-			memcpy(szBuff, &kHelloId, sizeof(unsigned int));
-			memcpy(szBuff + sizeof(unsigned int), n_pNetNode->Addr, SOCKADDR_SIZE);
-			n_pNetNode->Send(szBuff, nLen);
+			NetBuffer.SetData(n_pNetNode->Addr, SOCKADDR_SIZE);
+			NetBuffer.SetEventId(kHelloId);
+			
+			n_pNetNode->Send(NetBuffer);
 		}
 		break;
 		case kHeartId:
 		{
-			auto pHeart = (FHeart*)pEventMsg;
+			auto pHeart = (FHeart*)NetBuffer.GetData();
+
+			char szBuff[sizeof(unsigned int) * 2] = { 0 };
+			auto nNo = ntohl(pHeart->No);
+			auto nCnt = ntohl(pHeart->Cnt);
+			memcpy(szBuff, &nNo, sizeof(unsigned int));
+			memcpy(szBuff + sizeof(unsigned int), &nCnt, sizeof(unsigned int));
+
 			OnEventCallback(n_pNetNode, ENetEvent::Heart,
 				// 心跳序号及失败次数
-				std::string(n_szData + sizeof(unsigned int) * 2, sizeof(unsigned int) * 2)
+				std::string(szBuff, sizeof(unsigned int) * 2)
 			);
 
 			// 客户端发的心跳包需回消息，否则通过事件处理后续逻辑
 			if (pHeart->Sender != (unsigned int)fd)
 			{
-				pHeart->No++;
-				n_pNetNode->Send(n_szData, n_nSize);
+				pHeart->No = htonl(nNo + 1);
+				n_pNetNode->Send(NetBuffer);
 			}
 		}
 		break;
@@ -1650,39 +1828,48 @@ namespace tinynet
 		if (m_thread.joinable()) m_thread.join();
 	}
 
-	bool CTinyClient::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, int n_nSize)
+	bool CTinyClient::OnEventMessage(FNetNode* n_pNetNode, const char* n_szData, const int n_nSize)
 	{
 		bool bResult = true;
 
-		auto pEventMsg = (FEventMsg*)n_szData;
-		switch (pEventMsg->Id)
+		FNetBuffer NetBuffer;
+		if (!NetBuffer.PointTo(n_szData, n_nSize)) return false;
+		auto nEventId = NetBuffer.GetEventId();
+
+		switch (nEventId)
 		{
 		case kHelloId:
 		{
 			// 获取远端 sockaddr
-			auto pData = (char*)(n_szData + sizeof(unsigned int));
-			memcpy(m_szRemoteAddr, pData, SOCKADDR_SIZE);
+			memcpy(m_szRemoteAddr, NetBuffer.GetData(), SOCKADDR_SIZE);
 
 			OnEventCallback(n_pNetNode, ENetEvent::Hello, "");
 		}
 		break;
 		case kHeartId:
 		{
-			auto pHeart = (FHeart*)pEventMsg;
+			auto pHeart = (FHeart*)NetBuffer.GetData();
+
+			char szBuff[sizeof(unsigned int) * 2] = { 0 };
+			auto nNo = ntohl(pHeart->No);
+			auto nCnt = ntohl(pHeart->Cnt);
+			memcpy(szBuff, &nNo, sizeof(unsigned int));
+			memcpy(szBuff + sizeof(unsigned int), &nCnt, sizeof(unsigned int));
+
 			OnEventCallback(n_pNetNode, ENetEvent::Heart,
 				// 心跳序号及失败次数
-				std::string(n_szData + sizeof(unsigned int) * 2, sizeof(unsigned int) * 2)
+				std::string(szBuff, sizeof(unsigned int) * 2)
 			);
 
 			// 服务端发的心跳包需回消息
 			if (pHeart->Sender != (unsigned int)fd)
 			{
-				pHeart->No++;
-				n_pNetNode->Send(n_szData, n_nSize);
+				pHeart->No = htonl(nNo + 1);
+				n_pNetNode->Send(NetBuffer);
 			}
 			else
 			{
-				m_nHeartNo = pHeart->No;
+				m_nHeartNo = nNo;
 			}
 		}
 		break;
