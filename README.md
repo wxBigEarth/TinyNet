@@ -37,6 +37,7 @@ Socket 结点封装在结构体 FNetNode，可通过该对象发送数据。
 fnRecvCallback 回调返回给用户
 
 内部事件
+
 客户端初始化成功时，自动给服务端发送 kHelloId 消息，服务端返回远端 sockaddr，触发 ENetEvent::Hello 事件
 
 客户端启用心跳机制时，发送 kHeartId 消息，触发 ENetEvent::Heart 事件

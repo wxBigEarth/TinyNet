@@ -429,7 +429,7 @@ namespace tinynet
 		SetData(n_sData.data(), n_sData.size());
 	}
 
-	const char* FNetBuffer::GetData()
+	const char* FNetBuffer::GetData() const
 	{
 		if (!Buffer) return nullptr;
 		return Buffer + sizeof(FHeader);
@@ -545,7 +545,7 @@ namespace tinynet
 		}
 		else if (eNetType == ENetType::UDP)
 		{
-			nResult = sendto(fd, n_Buffer.Buffer, (int)n_Buffer.nLength, 0,
+			nResult = sendto(fd, n_Buffer.GetData(), (int)n_Buffer.DataSize(), 0,
 				(stSockaddr*)Addr, sizeof(stSockaddr));
 		}
 
@@ -574,7 +574,7 @@ namespace tinynet
 		const std::string& n_sHost, const unsigned short n_nPort) const
 	{
 		if (!n_Buffer.Buffer || !n_Buffer.nLength) return 0;
-		return Send(n_Buffer.Buffer, (int)n_Buffer.nLength, n_sHost, n_nPort);
+		return Send(n_Buffer.GetData(), (int)n_Buffer.DataSize(), n_sHost, n_nPort);
 	}
 
 	const bool FNetNode::IsValid() const

@@ -113,7 +113,7 @@ namespace tinynet
 		void SetData(const char* n_szData, const size_t n_nSize);
 		void SetData(const std::string& n_sData);
 		// 获取数据，不含FHeader
-		const char* GetData();
+		const char* GetData() const;
 
 		// 指向现有缓存地址
 		bool PointTo(const char* n_szData, const size_t n_nSize);
