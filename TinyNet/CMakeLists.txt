@@ -1,6 +1,3 @@
-# CMakeList.txt: RTSNet µÄ CMake ÏîÄ¿£¬ÔÚ´Ë´¦°üÀ¨Ô´´úÂë²¢¶¨Òå
-# ÏîÄ¿ÌØ¶¨µÄÂß¼­¡£
-#
 
 project("TinyNet")
 
@@ -21,3 +18,39 @@ add_library(${PROJECT_NAME} SHARED
 	${MainSource}
 )
 
+IF (CMAKE_SYSTEM_NAME MATCHES "Windows")
+
+	# æ·»åŠ è‡ªå®šä¹‰å‘½ä»¤
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+
+		COMMAND ${CMAKE_COMMAND} -E copy 
+			${RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}.dll
+			${INSTALL_SHARED}/${CMAKE_BUILD_TYPE}
+
+		COMMAND ${CMAKE_COMMAND} -E copy
+			${ARCHIVE_OUTPUT_DIRECTORY}/${PROJECT_NAME}.lib
+			${INSTALL_LIB}/${CMAKE_BUILD_TYPE}
+
+		COMMAND ${CMAKE_COMMAND} -E copy
+			${ARCHIVE_OUTPUT_DIRECTORY}/${PROJECT_NAME}.exp
+			${INSTALL_LIB}/${CMAKE_BUILD_TYPE}
+		
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			${CMAKE_CURRENT_LIST_DIR}/Include/
+			${INSTALL_ROOT}/include
+
+		COMMENT "Copying library and headers to output directory"
+	)
+
+IF (CMAKE_BUILD_TYPE MATCHES "Debug")
+
+	# æ·»åŠ è‡ªå®šä¹‰å‘½ä»¤
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+
+		COMMAND ${CMAKE_COMMAND} -E copy 
+			${RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}.pdb
+			${INSTALL_SHARED}/${CMAKE_BUILD_TYPE}
+	)
+endif()
+
+endif()
