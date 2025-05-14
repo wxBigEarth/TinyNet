@@ -165,6 +165,7 @@ namespace tinynet
 		int Send(const char* n_szData, const int n_nSize) const;
 		int Send(const std::string& n_sData) const;
 		int Send(const FNetBuffer& n_Buffer) const;
+		int SendEvent(const FNetBuffer& n_Buffer) const;
 
 		/// <summary>
 		/// 发送UDP消息给服务端外的用户
