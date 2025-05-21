@@ -1,5 +1,5 @@
-﻿#include <vector>
-#include "TinyNet.h"
+﻿#include "TinyNet.h"
+#include "Debug.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <WinSock2.h>
@@ -106,7 +106,7 @@ namespace tinynet
 		std::string sResult;
 		int nResult = 0;
 		char ipstr[32] = { 0 };
-		
+
 		struct ifaddrs* ifaddr = nullptr;
 		nResult = getifaddrs(&ifaddr);
 		if (nResult != 0) return sResult;
@@ -191,22 +191,22 @@ namespace tinynet
 		auto ret = setsockopt(n_nFd, 
 			SOL_SOCKET, SO_BROADCAST, 
 			(ValType)&n_bEnable, sizeof(bool));
-		
+
 		if (ret == -1) 
-			DebugError("setsockopt IP_TTL error: %d\n", LastError());
+			DebugLog("setsockopt IP_TTL error: %d\n", LastError());
 		return ret;
 	}
 
 	// 设置Time-To-Live
 	static int SetSocketTTL(const size_t n_nFd, int n_nOpt, int n_nTTL)
 	{
-		if (n_nTTL <= 0 || n_nTTL => 255) return -1;
+		if (n_nTTL <= 0 || n_nTTL >= 255) return -1;
 		auto ret = setsockopt(n_nFd, 
 			IPPROTO_IP, n_nOpt, 
 			(ValType)&n_nTTL, sizeof(int));
 
 		if (ret == -1)
-			DebugError("setsockopt IP_TTL error: %d\n", LastError());
+			DebugLog("setsockopt IP_TTL error: %d\n", LastError());
 		return ret;
 	}
 
@@ -218,7 +218,7 @@ namespace tinynet
 			n_IpMreq, sizeof(stIpMreq));
 
 		if (ret == -1)
-			DebugError("setsockopt IP_ADD_MEMBERSHIP error: %d\n", LastError());
+			DebugLog("setsockopt IP_ADD_MEMBERSHIP error: %d\n", LastError());
 		return ret;
 	}
 
@@ -230,7 +230,7 @@ namespace tinynet
 			n_IpMreq, sizeof(stIpMreq));
 
 		if (ret == -1)
-			DebugError("setsockopt IP_DROP_MEMBERSHIP error: %d\n", LastError());
+			DebugLog("setsockopt IP_DROP_MEMBERSHIP error: %d\n", LastError());
 		return ret;
 	}
 
@@ -247,7 +247,7 @@ namespace tinynet
 			(ValType)&n_nKeeyAlive, sizeof(int));
 
 		if (ret == -1)
-			DebugError("setsockopt KeepAlive error: %d\n", LastError());
+			DebugLog("setsockopt KeepAlive error: %d\n", LastError());
 		// ... 设置 TCP_KEEPIDLE, TCP_KEEPINTVL 和 TCP_KEEPCNT
 		return ret;
 	}
@@ -260,7 +260,7 @@ namespace tinynet
 			(ValType)&n_nReuse, sizeof(int));
 
 		if (ret == -1)
-			DebugError("setsockopt SO_REUSEADDR error: %d\n", LastError());
+			DebugLog("setsockopt SO_REUSEADDR error: %d\n", LastError());
 		return ret;
 	}
 
@@ -277,17 +277,17 @@ namespace tinynet
 		tv.tv_sec = n_nMilliSeconds / 1000;	// Timeout in seconds
 		tv.tv_usec = 0;						// Timeout in microseconds
 #endif
-		// 设置发送超时
+		// 设置超时
 		auto ret = setsockopt(n_nFd,
-			SOL_SOCKET,n_nType,
+			SOL_SOCKET, n_nType,
 			(ValType)&tv, sizeof(tv));
 
 		if (ret == -1)
 		{
 			if (n_nType == SO_SNDTIMEO)
-				DebugError("setsockopt SO_SNDTIMEO error: %d\n", LastError());
+				DebugLog("setsockopt SO_SNDTIMEO error: %d\n", LastError());
 			else
-				DebugError("setsockopt SO_RCVTIMEO error: %d\n", LastError());
+				DebugLog("setsockopt SO_RCVTIMEO error: %d\n", LastError());
 		}
 		return ret;
 	}
@@ -369,7 +369,7 @@ namespace tinynet
 	void FNetBuffer::Free()
 	{
 		if (nCapacity > 0 && Buffer) free(Buffer);
-		
+
 		Buffer = nullptr;
 		nLength = 0;
 		nCapacity = 0;
@@ -690,7 +690,7 @@ namespace tinynet
 		{
 			WSADATA wsaData;
 			int nResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-			if (nResult != 0) DebugError("初始化 Socket 失败\n");
+			if (nResult != 0) DebugLog("初始化 Socket 失败\n");
 		}
 
 		m_nRef++;
@@ -729,7 +729,7 @@ namespace tinynet
 		m_NetNode.fd = socket(AF_INET, SOCK_DGRAM, 0);
 		if (m_NetNode.fd == SOCKET_ERROR)
 		{
-			DebugError("create Socket error: %d\n", LastError());
+			DebugLog("create Socket error: %d\n", LastError());
 		}
 		else
 		{
@@ -776,7 +776,7 @@ namespace tinynet
 			nResult = bind(m_NetNode.fd, (stSockaddr*)&Addr, sizeof(stSockaddr));
 			if (nResult == -1)
 			{
-				DebugError("multicast bind Socket error: %d\n", LastError());
+				DebugLog("multicast bind Socket error: %d\n", LastError());
 				break;
 			}
 
@@ -937,7 +937,7 @@ namespace tinynet
 			auto nLack = nSize - NetBuffer.nLength;
 			// 补足完整数据包
 			n_sLast.append(n_szData, nLack);
-			
+
 			if (!OnEventMessage(n_pNetNode, n_sLast.data(), (int)nSize))
 			{
 				// 更新Buffer长度
@@ -1099,7 +1099,7 @@ namespace tinynet
 			fd = WSASocketW(AF_INET, nSockType, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			if (fd == SOCKET_ERROR)
 			{
-				DebugError("创建 Socket 失败\n");
+				DebugLog("创建 Socket 失败\n");
 				break;
 			}
 
@@ -1111,7 +1111,7 @@ namespace tinynet
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
-				DebugError("绑定 Socket 失败\n");
+				DebugLog("绑定 Socket 失败\n");
 				break;
 			}
 
@@ -1120,7 +1120,7 @@ namespace tinynet
 				nResult = listen(fd, SOMAXCONN);
 				if (nResult == SOCKET_ERROR)
 				{
-					DebugError("监听 Socket 失败\n");
+					DebugLog("监听 Socket 失败\n");
 					break;
 				}
 			}
@@ -1130,7 +1130,7 @@ namespace tinynet
 			m_hIocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 			if (!m_hIocp)
 			{
-				DebugError("创建完成端口失败\n");
+				DebugLog("创建完成端口失败\n");
 				break;
 			}
 
@@ -1174,7 +1174,7 @@ namespace tinynet
 
 			if (ClientSocket == SOCKET_ERROR)
 			{
-				if (m_bRun) DebugError("Accept 错误: %d\n", LastError());
+				if (m_bRun) DebugLog("Accept 错误: %d\n", LastError());
 				break;
 			}
 
@@ -1192,7 +1192,7 @@ namespace tinynet
 
 			if (nResult == SOCKET_ERROR && LastError() != WSA_IO_PENDING)
 			{
-				DebugError("IO Pending 错误 : %d", LastError());
+				DebugLog("IO Pending 错误 : %d", LastError());
 				break;
 			}
 		}
@@ -1253,7 +1253,7 @@ namespace tinynet
 
 				if (nResult == SOCKET_ERROR && LastError() != WSA_IO_PENDING)
 				{
-					DebugError("WSARecv 错误 : %d", LastError());
+					DebugLog("WSARecv 错误 : %d", LastError());
 				}
 			}
 		}
@@ -1384,19 +1384,19 @@ namespace tinynet
 			fd = socket(AF_INET, nSockType, 0);
 			if (fd == -1)
 			{
-				DebugError("create Socket error: %d\n", LastError());
+				DebugError("create Socket error");
 				break;
 			}
 
 			SetSocketTTL(fd, IP_TTL, (unsigned char)m_nTTL);
-			SetSocketSendTimeout(fd, m_nTimeout)
+			SetSocketSendTimeout(fd, m_nTimeout);
 			SetSocketRecvTimeout(fd, m_nTimeout);
 			SetSocketReuseAddr(fd, 1);
 
 			auto nResult = bind(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == -1)
 			{
-				DebugError("bind Socket error: %d\n", LastError());
+				DebugError("bind Socket error");
 				break;
 			}
 
@@ -1405,7 +1405,7 @@ namespace tinynet
 				nResult = listen(fd, SOMAXCONN);
 				if (nResult == -1)
 				{
-					DebugError("listen Socket error: %d\n", LastError());
+					DebugError("listen Socket error");
 					break;
 				}
 			}
@@ -1413,7 +1413,7 @@ namespace tinynet
 			m_nEpfd = epoll_create(1);
 			if (m_nEpfd == -1)
 			{
-				DebugError("create EPoll error: %d\n", LastError());
+				DebugError("create EPoll error");
 				break;
 			}
 
@@ -1421,7 +1421,7 @@ namespace tinynet
 			nResult = AddSocketIntoPoll(this);
 			if (nResult == -1)
 			{
-				DebugError("Add EPoll eventl error: %d\n", LastError());
+				DebugError("Add EPoll eventl error");
 				break;
 			}
 
@@ -1460,7 +1460,7 @@ namespace tinynet
 			int nCount = epoll_wait(m_nEpfd, Event, EPOLL_SIZE, -1);
 			if (nCount < 0)
 			{
-				if (m_bRun) DebugError("epoll_wait error: %d\n", LastError());
+				if (m_bRun) DebugError("epoll_wait error");
 				break;
 			}
 
@@ -1475,7 +1475,7 @@ namespace tinynet
 					int nFd = accept(fd, (stSockaddr*)&RemoteAddr, &nLen);
 					if (nFd == -1)
 					{
-						DebugError("accept error: %d\n", LastError());
+						DebugError("accept error");
 						continue;
 					}
 
@@ -1512,7 +1512,7 @@ namespace tinynet
 					if (nResult <= 0)
 					{
 						if (eNetType == ENetType::TCP) FreeSocketNode(&pNetNode);
-						if (m_bRun) DebugInfo("socket quit: %d\n", LastError());
+						if (m_bRun) DebugLog("socket quit");
 						continue;
 					}
 
@@ -1610,7 +1610,7 @@ namespace tinynet
 			// 返回客户端对应的远端 sockaddr
 			NetBuffer.SetData(n_pNetNode->Addr, SOCKADDR_SIZE);
 			NetBuffer.SetEventId(kHelloId);
-			
+
 			n_pNetNode->SendEvent(NetBuffer);
 		}
 		break;
@@ -1715,17 +1715,17 @@ namespace tinynet
 			fd = socket(AF_INET, nSockType, 0);
 			if (fd == SOCKET_ERROR)
 			{
-				DebugError("create Socket error: %d\n", LastError());
+				DebugLog("create Socket error: %d\n", LastError());
 				break;
 			}
 
-			SetSocketTTL(fd, (unsigned char)m_nTTL);
+			SetSocketTTL(fd, IP_TTL, (unsigned char)m_nTTL);
 			SetSocketSendTimeout(fd, m_nTimeout);
-			
+
 			auto nResult = connect(fd, (stSockaddr*)Addr, sizeof(stSockaddr));
 			if (nResult == SOCKET_ERROR)
 			{
-				DebugError("connect Socket error: %d\n", LastError());
+				DebugLog("connect Socket error: %d\n", LastError());
 				break;
 			}
 
@@ -1781,7 +1781,7 @@ namespace tinynet
 #else
 				if (EINTR == LastError()) continue;
 #endif
-				if (m_bRun) DebugInfo("socket quit: %d\n", LastError());
+				if (m_bRun) DebugLog("socket quit");
 				break;
 			}
 
@@ -1818,9 +1818,7 @@ namespace tinynet
 			if (m_nHeartNo == nHeartNo)
 			{
 				if (nFail >= m_nHeartTimeoutCnt) break;
-				else {
-					nFail++;
-				}
+				else nFail++;
 			}
 			else nFail = 0;
 
