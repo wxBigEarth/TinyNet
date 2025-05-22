@@ -355,14 +355,8 @@ namespace tinynet
 		}
 		else nLength = nSize;
 
-		if (Buffer)
-		{
-			auto Header = (FHeader*)Buffer;
-			// 将长度转换为网络字节序（大端）
-			Header->nLength = (unsigned int)htonl((unsigned long)nLength);
-			Header->nEventId = 0;
-		}
-
+		SetDataPacketSize(n_nSize);
+		SetEventId(0);
 		Zero();
 	};
 
@@ -407,6 +401,14 @@ namespace tinynet
 		if (!Buffer) return 0;
 		auto Header = (FHeader*)Buffer;
 		return ntohl(Header->nEventId);
+	}
+
+	void FNetBuffer::SetDataPacketSize(const size_t n_nSize)
+	{
+		if (!Buffer) return;
+		auto Header = (FHeader*)Buffer;
+		// 将长度转换为网络字节序（大端）
+		Header->nLength = (unsigned int)htonl((unsigned long)n_nSize);
 	}
 
 	const unsigned int FNetBuffer::GetDataPacketSize()
@@ -513,18 +515,8 @@ namespace tinynet
 
 		if (!IsValid() || n_nSize == 0) return nResult;
 
-		if (eNetType == ENetType::TCP)
-		{
-			FNetBuffer NetBuffer(n_szData, n_nSize);			 
-			nResult = send(fd, NetBuffer.Buffer, (int)NetBuffer.nLength, 0);
-		}
-		else if (eNetType == ENetType::UDP)
-		{
-			nResult = sendto(fd, n_szData, n_nSize, 0,
-				(stSockaddr*)Addr, sizeof(stSockaddr));
-		}
-
-		return nResult;
+		FNetBuffer NetBuffer(n_szData, n_nSize);
+		return Send(NetBuffer);
 	}
 
 	int FNetNode::Send(const std::string& n_sData) const
@@ -545,21 +537,9 @@ namespace tinynet
 		}
 		else if (eNetType == ENetType::UDP)
 		{
-			nResult = sendto(fd, n_Buffer.GetData(), (int)n_Buffer.DataSize(), 0,
+			nResult = sendto(fd, n_Buffer.Buffer, (int)n_Buffer.nLength, 0,
 				(stSockaddr*)Addr, sizeof(stSockaddr));
 		}
-
-		return nResult;
-	}
-
-	int FNetNode::SendEvent(const FNetBuffer& n_Buffer) const
-	{
-		int nResult = 0;
-
-		if (eNetType == ENetType::TCP)
-			nResult = Send(n_Buffer);
-		else if (eNetType == ENetType::UDP)
-			nResult = Send(n_Buffer.Buffer, (int)n_Buffer.nLength);
 
 		return nResult;
 	}
@@ -628,7 +608,7 @@ namespace tinynet
 		NetBuffer.Alloc(0);
 		NetBuffer.SetEventId(kHelloId);
 
-		return SendEvent(NetBuffer);
+		return Send(NetBuffer);
 	}
 
 	int FNetNode::Heart(unsigned int n_nNo, unsigned int n_nFailCnt)
@@ -642,7 +622,7 @@ namespace tinynet
 		NetBuffer.SetData((const char*)&Heart, sizeof(FHeart));
 		NetBuffer.SetEventId(kHeartId);
 
-		return SendEvent(NetBuffer);
+		return Send(NetBuffer);
 	}
 
 	int FNetNode::Quit()
@@ -653,7 +633,7 @@ namespace tinynet
 		NetBuffer.Alloc(0);
 		NetBuffer.SetEventId(kQuitId);
 
-		return SendEvent(NetBuffer);
+		return Send(NetBuffer);
 	}
 #pragma endregion
 
@@ -820,13 +800,14 @@ namespace tinynet
 	int CMulticast::Send(const char* n_szData, const int n_nSize)
 	{
 		if (m_NetNode.eNetType != ENetType::UDP) return 0;
-		return m_NetNode.Send(n_szData, n_nSize);
+		return sendto(m_NetNode.fd, n_szData, n_nSize, 0,
+				(stSockaddr*)m_NetNode.Addr, sizeof(stSockaddr));
 	}
 
 	int CMulticast::Send(const std::string n_sData)
 	{
 		if (m_NetNode.eNetType != ENetType::UDP) return 0;
-		return m_NetNode.Send(n_sData);
+		return Send(n_sData.data(), (int)n_sData.size());
 	}
 
 	void CMulticast::MulticastThread() const
@@ -918,7 +899,7 @@ namespace tinynet
 			}
 
 			// 数据包原长度
-			auto nSize = NetBuffer.GetDataPacketSize();
+			auto nSize = NetBuffer.GetDataPacketSize() + sizeof(FHeader);
 			if (nSize > kMaxTCPBufferSize)
 			{
 				// 长度头异常，丢弃
@@ -959,7 +940,7 @@ namespace tinynet
 			}
 
 			// 数据包原长度
-			auto nSize = NetBuffer.GetDataPacketSize();
+			auto nSize = NetBuffer.GetDataPacketSize() + sizeof(FHeader);
 			if (nSize < NetBuffer.nLength)
 			{
 				// 数据不足一个完整数据包
@@ -982,7 +963,9 @@ namespace tinynet
 		if (eNetType != ENetType::UDP) return;
 		if (!OnEventMessage(n_pNetNode, n_szData, n_nSize))
 		{
-			OnRecvCallback(n_pNetNode, n_szData, n_nSize);
+			FNetBuffer NetBuffer;
+			if (!NetBuffer.PointTo(n_szData, n_nSize)) return;
+			OnRecvCallback(n_pNetNode, NetBuffer.GetData(), NetBuffer.DataSize());
 		}
 	}
 
@@ -1611,7 +1594,7 @@ namespace tinynet
 			NetBuffer.SetData(n_pNetNode->Addr, SOCKADDR_SIZE);
 			NetBuffer.SetEventId(kHelloId);
 
-			n_pNetNode->SendEvent(NetBuffer);
+			n_pNetNode->Send(NetBuffer);
 		}
 		break;
 		case kHeartId:
@@ -1633,7 +1616,7 @@ namespace tinynet
 			if (pHeart->Sender != (unsigned int)fd)
 			{
 				pHeart->No = htonl(nNo + 1);
-				n_pNetNode->SendEvent(NetBuffer);
+				n_pNetNode->Send(NetBuffer);
 			}
 		}
 		break;
@@ -1875,7 +1858,7 @@ namespace tinynet
 			if (pHeart->Sender != (unsigned int)fd)
 			{
 				pHeart->No = htonl(nNo + 1);
-				n_pNetNode->SendEvent(NetBuffer);
+				n_pNetNode->Send(NetBuffer);
 			}
 			else
 			{

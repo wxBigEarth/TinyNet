@@ -105,13 +105,17 @@ namespace tinynet
 		// 获取事件Id(内部使用)
 		const unsigned int GetEventId() const;
 
-		// 获取单次通讯数据长度(含数据头)
+		// 设置单次通讯数据长度
+		void SetDataPacketSize(const size_t n_nSize);
+		// 获取单次通讯数据长度
 		const unsigned int GetDataPacketSize();
 
 		// 填充数据
 		void SetData(const char* n_szData, const size_t n_nSize);
 		void SetData(const std::string& n_sData);
-		// 获取数据，不含FHeader
+		// 获取数据(去除数据头)
+		// 若在该方法返回的指针填充数据，需确保已分配内存，
+		// 且调用SetDataPacketSize设置数据长度
 		const char* GetData() const;
 
 		// 指向现有缓存地址
@@ -121,7 +125,7 @@ namespace tinynet
 		FNetBuffer& operator=(const FNetBuffer& other);
 		FNetBuffer& operator=(const std::string& n_sData);
 
-		// 数据，格式: FHeader+数据
+		// 数据，格式: 数据头+数据
 		char* Buffer = nullptr;
 		// 数据长度
 		size_t nLength = 0;
@@ -164,7 +168,6 @@ namespace tinynet
 		int Send(const char* n_szData, const int n_nSize) const;
 		int Send(const std::string& n_sData) const;
 		int Send(const FNetBuffer& n_Buffer) const;
-		int SendEvent(const FNetBuffer& n_Buffer) const;
 
 		/// <summary>
 		/// 发送UDP消息给服务端外的用户
@@ -243,7 +246,7 @@ namespace tinynet
 
 		void SetRecvBuffSize(const int n_nSize);
 
-		// 设置接收事件及消息回调
+		// 设置接收事件回调及消息回调
 		void SetTinyCallback(ITinyCallback* n_TinyCallback);
 
 	protected:
@@ -357,7 +360,7 @@ namespace tinynet
 		
 		// 设置超时，在Start前设置
 		void SetTimeout(int n_nMilliSeconds);
-		// 设置TTL，在Start前设置
+		// 设置TTL，取值范围：0~255，在Start前设置
 		void SetTTL(int n_nTTL);
 
 		const bool IsRunning() const { return m_bRun; }
@@ -491,7 +494,7 @@ namespace tinynet
 		void Stop() override;
 
 		/// <summary>
-		/// 启用心跳包
+		/// 启用心跳包，在Start前设置
 		/// </summary>
 		/// <param name="n_nPeriod">心跳周期(毫秒)</param>
 		/// <param name="n_nTimeoutCnt">心跳允许超时次数</param>
