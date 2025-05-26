@@ -549,11 +549,8 @@ namespace tinynet
 	{
 		if (!IsValid() || n_nSize == 0 || eNetType == ENetType::TCP) return 0;
 
-		stSockaddrIn OtherAddr = { 0 };
-		BuildSockAddrIn(&OtherAddr, n_sHost, n_nPort);
-
-		return sendto(fd, n_szData, n_nSize, 0,
-			(stSockaddr*)&OtherAddr, sizeof(stSockaddr));
+		FNetBuffer NetBuffer(n_szData, n_nSize);
+		return Send(NetBuffer, n_sHost, n_nPort);
 	}
 
 	int FNetNode::Send(const std::string& n_sData,
@@ -566,7 +563,12 @@ namespace tinynet
 		const std::string& n_sHost, const unsigned short n_nPort) const
 	{
 		if (!n_Buffer.Buffer || !n_Buffer.nLength) return 0;
-		return Send(n_Buffer.GetData(), (int)n_Buffer.DataSize(), n_sHost, n_nPort);
+
+		stSockaddrIn OtherAddr = { 0 };
+		BuildSockAddrIn(&OtherAddr, n_sHost, n_nPort);
+
+		return sendto(fd, n_Buffer.Buffer, (int)n_Buffer.nLength, 0,
+			(stSockaddr*)&OtherAddr, sizeof(stSockaddr));
 	}
 
 	const bool FNetNode::IsValid() const
