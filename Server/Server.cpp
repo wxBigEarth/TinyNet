@@ -60,6 +60,9 @@ int main()
 		case ENetEvent::Accept:
 			cout << "Accept: " << pNode->ToString() << endl;
 			break;
+		case ENetEvent::Hello:
+			cout << "Hello: " << pNode->ToString() << endl;
+			break;
 		case ENetEvent::Heart:
 		{
 			auto p = (unsigned int*)s.data();

@@ -1588,9 +1588,7 @@ namespace tinynet
 		{
 		case kHelloId:
 		{
-			OnEventCallback(n_pNetNode, ENetEvent::Hello,
-				std::string(n_pNetNode->Addr, SOCKADDR_SIZE)
-			);
+			OnEventCallback(n_pNetNode, ENetEvent::Hello, "");
 
 			// 返回客户端对应的远端 sockaddr
 			NetBuffer.SetData(n_pNetNode->Addr, SOCKADDR_SIZE);
@@ -1838,7 +1836,8 @@ namespace tinynet
 			// 获取远端 sockaddr
 			memcpy(m_szRemoteAddr, NetBuffer.GetData(), SOCKADDR_SIZE);
 
-			OnEventCallback(n_pNetNode, ENetEvent::Hello, "");
+			OnEventCallback(n_pNetNode, ENetEvent::Hello, 
+				std::string(m_szRemoteAddr, SOCKADDR_SIZE));
 		}
 		break;
 		case kHeartId:
